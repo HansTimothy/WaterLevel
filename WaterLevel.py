@@ -4,30 +4,29 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 # -----------------------------
 # Load trained model
 # -----------------------------
 model = joblib.load("best_model.pkl")
 
+# -----------------------------
+# Prediction date = today
+# -----------------------------
+pred_date = datetime.today().date()
+start_date = pred_date - timedelta(days=7)  # H-7
+end_date = pred_date - timedelta(days=1)    # H-1
+
 st.title("Water Level Prediction Dashboard 🌊")
-st.write("Prediksi Water Level menggunakan data harian dari Open-Meteo API")
+st.write(f"Prediksi Water Level untuk tanggal **{pred_date}** menggunakan data harian dari Open-Meteo API")
+st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 
 # -----------------------------
 # Input manual Water Level Lag 1–7 hari
 # -----------------------------
-st.subheader("Masukkan Water Level 1–7 hari sebelum")
+st.subheader(f"Masukkan Water Level 1–7 hari sebelum tanggal {pred_date}")
 wl_inputs = [st.number_input(f"Water Level H-{i}", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
-
-# -----------------------------
-# Input tanggal prediksi
-# -----------------------------
-pred_date = st.date_input("Prediction date", pd.to_datetime("2025-09-30"))
-start_date = pred_date - timedelta(days=7)
-end_date = pred_date
-
-st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 
 # -----------------------------
 # Fetch data & predict
@@ -56,6 +55,9 @@ if st.button("Fetch Data & Predict"):
     st.subheader("Preview API Data")
     st.dataframe(df)
 
+    # -----------------------------
+    # Buat input dataframe sesuai feature model
+    # -----------------------------
     input_data = pd.DataFrame({
         # Precipitation lags
         **{f"Precipitation_lag{i}d": [df["precipitation_sum"].iloc[-i]] for i in range(1, 8)},
@@ -67,6 +69,19 @@ if st.button("Fetch Data & Predict"):
         **{f"Water_level_lag{i}d": [wl_inputs[i-1]] for i in range(1, 8)}
     })
     
+    # pastikan urutan kolom sesuai model
+    features = [
+        "Precipitation_lag1d","Precipitation_lag2d","Precipitation_lag3d","Precipitation_lag4d",
+        "Precipitation_lag5d","Precipitation_lag6d","Precipitation_lag7d",
+        "Temperature_lag1d","Temperature_lag2d","Temperature_lag3d","Temperature_lag4d",
+        "Relative_humidity_lag1d","Relative_humidity_lag2d","Relative_humidity_lag3d",
+        "Relative_humidity_lag4d","Relative_humidity_lag5d","Relative_humidity_lag6d",
+        "Relative_humidity_lag7d",
+        "Water_level_lag1d","Water_level_lag2d","Water_level_lag3d","Water_level_lag4d",
+        "Water_level_lag5d","Water_level_lag6d","Water_level_lag7d",
+    ]
+    input_data = input_data[features].fillna(0.0)
+
     # -----------------------------
     # Prediction
     # -----------------------------
