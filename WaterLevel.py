@@ -34,7 +34,7 @@ wl_dates = [pred_date - timedelta(days=i) for i in range(1, 8)]
 # input manual dengan tanggal sebagai label (bold)
 wl_inputs = [
     st.number_input(
-        f"**{d.strftime('%d %B %Y')}**",
+        f" Water Level **{d.strftime('%d %B %Y')}**",
         value=21.0-i*0.1,
         step=0.1,
         format="%.2f"
