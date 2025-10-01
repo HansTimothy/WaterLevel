@@ -55,6 +55,17 @@ if st.button("Fetch Data & Predict"):
     
     st.subheader("Preview API Data")
     st.dataframe(df)
+
+    input_data = pd.DataFrame({
+        # Precipitation lags
+        **{f"Precipitation_lag{i}d": [df["precipitation_sum"].iloc[-i]] for i in range(1, 8)},
+        # Temperature lags
+        **{f"Temperature_lag{i}d": [df["temperature_mean"].iloc[-i]] for i in range(1, 5)},
+        # Relative Humidity lags
+        **{f"Relative_humidity_lag{i}d": [df["relative_humidity"].iloc[-i]] for i in range(1, 8)},
+        # Water Level lags (manual input)
+        **{f"Water_level_lag{i}d": [wl_inputs[i-1]] for i in range(1, 8)}
+    })
     
     # -----------------------------
     # Prediction
