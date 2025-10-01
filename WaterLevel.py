@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
+from datetime import timedelta
 
 # -----------------------------
 # Load trained model
@@ -14,10 +15,15 @@ st.title("Water Level Prediction Dashboard 🌊")
 st.write("Prediksi Water Level menggunakan data harian dari Open-Meteo API")
 
 # -----------------------------
-# Input tanggal
+# Input tanggal prediksi
 # -----------------------------
-start_date = st.date_input("Start date", pd.to_datetime("2025-09-01"))
-end_date   = st.date_input("End date", pd.to_datetime("2025-09-30"))
+pred_date = st.date_input("Prediction date", pd.to_datetime("2025-09-30"))
+
+# Tentukan start date = 7 hari sebelum pred_date
+start_date = pred_date - timedelta(days=7)
+end_date = pred_date
+
+st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 
 # -----------------------------
 # Ambil data dari API
@@ -45,7 +51,7 @@ if st.button("Fetch Data & Predict"):
     df.set_index("time", inplace=True)
     
     st.subheader("Preview API Data")
-    st.dataframe(df.tail(10))
+    st.dataframe(df)
     
     # -----------------------------
     # Input manual Water Level Lag 1–7 hari
@@ -74,4 +80,4 @@ if st.button("Fetch Data & Predict"):
     # Prediction
     # -----------------------------
     prediction = model.predict(input_data)[0]
-    st.success(f"Predicted Water Level: {prediction:.2f} m")
+    st.success(f"Predicted Water Level on {pred_date}: {prediction:.2f} m")
