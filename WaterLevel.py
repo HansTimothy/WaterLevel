@@ -17,8 +17,8 @@ st.write("Prediksi Water Level menggunakan data harian dari Open-Meteo API")
 # -----------------------------
 # Input manual Water Level Lag 1–7 hari
 # -----------------------------
-st.subheader("Masukkan Water Level Lag 1–7 hari (manual)")
-wl_inputs = [st.number_input(f"Water Level Lag {i}d", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
+st.subheader("Masukkan Water Level 1–7 hari sebelum")
+wl_inputs = [st.number_input(f"Water Level H-{i}", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
 
 # -----------------------------
 # Input tanggal prediksi
