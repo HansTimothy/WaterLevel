@@ -27,7 +27,7 @@ st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 # -----------------------------
 # Input manual Water Level Lag 1–7 hari
 # -----------------------------
-st.subheader(f"Masukkan Water Level 1 hingga 7 hari sebelum {pred_date_str}")
+st.subheader(f"Masukkan Historis Water Level Sebelum {pred_date_str}")
 wl_inputs = [st.number_input(f"Water Level H-{i}", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
 
 # -----------------------------
