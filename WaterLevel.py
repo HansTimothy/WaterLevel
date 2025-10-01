@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+import locale
 
 # -----------------------------
 # Load trained model
@@ -15,7 +16,10 @@ model = joblib.load("best_model.pkl")
 # Prediction date = today
 # -----------------------------
 pred_date = datetime.today().date()
-pred_date_str = pred_date.strftime("%d %B %Y")
+
+locale.setlocale(locale.LC_TIME, 'id_ID.utf8')  # Atau 'Indonesian_Indonesia' di Windows
+today = date.today()
+pred_date_str = today.strftime("%d %B %Y")
 
 start_date = pred_date - timedelta(days=7)  # H-7
 end_date = pred_date - timedelta(days=1)    # H-1
@@ -27,7 +31,7 @@ st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 # -----------------------------
 # Input manual Water Level Lag 1–7 hari
 # -----------------------------
-st.subheader(f"Masukkan Water Level 1 hingga 7 hari sebelum {{pred_date_str}}")
+st.subheader(f"Masukkan Water Level 1 hingga 7 hari sebelum {pred_date_str}")
 wl_inputs = [st.number_input(f"Water Level H-{i}", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
 
 # -----------------------------
