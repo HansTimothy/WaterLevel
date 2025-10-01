@@ -9,7 +9,7 @@ import numpy as np
 model = joblib.load("best_model.pkl")
 
 st.title("Water Level Prediction Dashboard 🌊")
-st.write("Masukkan nilai variabel harian (lag 1–7 hari) untuk memprediksi Water Level:")
+st.write("Masukkan nilai variabel harian untuk memprediksi Water Level:")
 
 # -----------------------------
 # Input manual untuk setiap variable dan lag
@@ -17,7 +17,7 @@ st.write("Masukkan nilai variabel harian (lag 1–7 hari) untuk memprediksi Wate
 st.subheader("Precipitation (mm)")
 prec_inputs = [st.number_input(f"Precipitation Lag {i}d", value=200.0-i*5, step=1.0) for i in range(1, 8)]
 
-st.subheader("Temperature Anomaly (°C)")
+st.subheader("Temperature (°C)")
 temp_inputs = [st.number_input(f"Temperature Lag {i}d", value=0.0, step=0.01) for i in range(1, 5)]
 
 st.subheader("Relative Humidity (%)")
