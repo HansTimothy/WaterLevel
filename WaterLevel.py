@@ -27,7 +27,20 @@ st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 # Input manual Water Level Lag 1–7 hari
 # -----------------------------
 st.subheader(f"Masukkan Data Historis Water Level")
-wl_inputs = [st.number_input(f"Water Level H-{i}", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
+
+# buat list tanggal H-1 sampai H-7
+wl_dates = [pred_date - timedelta(days=i) for i in range(1, 8)]
+
+# input manual dengan tanggal sebagai label (bold)
+wl_inputs = [
+    st.number_input(
+        f"**{d.strftime('%d %B %Y')}**",
+        value=21.0-i*0.1,
+        step=0.1,
+        format="%.2f"
+    )
+    for i, d in enumerate(wl_dates)
+]
 
 # -----------------------------
 # Fetch data & predict
