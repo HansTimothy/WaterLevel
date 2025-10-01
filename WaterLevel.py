@@ -15,18 +15,22 @@ st.title("Water Level Prediction Dashboard 🌊")
 st.write("Prediksi Water Level menggunakan data harian dari Open-Meteo API")
 
 # -----------------------------
+# Input manual Water Level Lag 1–7 hari
+# -----------------------------
+st.subheader("Masukkan Water Level Lag 1–7 hari (manual)")
+wl_inputs = [st.number_input(f"Water Level Lag {i}d", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
+
+# -----------------------------
 # Input tanggal prediksi
 # -----------------------------
 pred_date = st.date_input("Prediction date", pd.to_datetime("2025-09-30"))
-
-# Tentukan start date = 7 hari sebelum pred_date
 start_date = pred_date - timedelta(days=7)
 end_date = pred_date
 
 st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 
 # -----------------------------
-# Ambil data dari API
+# Fetch data & predict
 # -----------------------------
 if st.button("Fetch Data & Predict"):
     url = (
@@ -39,7 +43,6 @@ if st.button("Fetch Data & Predict"):
     response = requests.get(url)
     data = response.json()
     
-    # Convert ke DataFrame
     df = pd.DataFrame({
         "time": data["daily"]["time"],
         "precipitation_sum": data["daily"]["precipitation_sum"],
@@ -52,12 +55,6 @@ if st.button("Fetch Data & Predict"):
     
     st.subheader("Preview API Data")
     st.dataframe(df)
-    
-    # -----------------------------
-    # Input manual Water Level Lag 1–7 hari
-    # -----------------------------
-    st.subheader("Masukkan Water Level Lag 1–7 hari (manual)")
-    wl_inputs = [st.number_input(f"Water Level Lag {i}d", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
     
     # -----------------------------
     # Buat input dataframe sesuai feature model
