@@ -6,44 +6,43 @@ import numpy as np
 # -----------------------------
 # Load trained model
 # -----------------------------
-
 model = joblib.load("best_model.pkl")
 
 st.title("Water Level Prediction Dashboard 🌊")
-st.write("Masukkan nilai variabel berikut untuk memprediksi Water Level:")
+st.write("Masukkan nilai variabel harian (lag 1–7 hari) untuk memprediksi Water Level:")
 
 # -----------------------------
-# Input manual
+# Input manual untuk setiap variable dan lag
 # -----------------------------
+st.subheader("Precipitation (mm)")
+prec_inputs = [st.number_input(f"Precipitation Lag {i}d", value=200.0-i*5, step=1.0) for i in range(1, 8)]
 
-iod = st.number_input("IOD", value=0.1, step=0.01)
-prec_lag1 = st.number_input("Precipitation Lag1", value=200.0, step=1.0)
-prec_lag2 = st.number_input("Precipitation Lag2", value=180.0, step=1.0)
-temp_lag1 = st.number_input("Temp Anomaly Lag1", value=0.05, step=0.01)
-temp_lag2 = st.number_input("Temp Anomaly Lag2", value=0.0, step=0.01)
-temp_lag3 = st.number_input("Temp Anomaly Lag3", value=-0.02, step=0.01)
-wl_lag1 = st.number_input("Water Level Lag1", value=21.0, step=0.1)
-wl_lag2 = st.number_input("Water Level Lag2", value=20.8, step=0.1)
+st.subheader("Temperature Anomaly (°C)")
+temp_inputs = [st.number_input(f"Temperature Lag {i}d", value=0.0, step=0.01) for i in range(1, 5)]
+
+st.subheader("Relative Humidity (%)")
+rh_inputs = [st.number_input(f"Relative Humidity Lag {i}d", value=90.0-i, step=0.1) for i in range(1, 8)]
+
+st.subheader("Water Level (m)")
+wl_inputs = [st.number_input(f"Water Level Lag {i}d", value=21.0-i*0.1, step=0.1) for i in range(1, 8)]
 
 # -----------------------------
 # Prepare input dataframe
 # -----------------------------
-
 input_data = pd.DataFrame({
-    "IOD_Lag1": [iod],
-    "Precipitation_Lag1": [prec_lag1],
-    "Precipitation_Lag2": [prec_lag2],
-    "Temp_anomaly_Lag1": [temp_lag1],
-    "Temp_anomaly_Lag2": [temp_lag2],
-    "Temp_anomaly_Lag3": [temp_lag3],
-    "Water_level_Lag1": [wl_lag1],
-    "Water_level_Lag2": [wl_lag2]
+    # Precipitation lags
+    **{f"Precipitation_lag{i}d": [prec_inputs[i-1]] for i in range(1, 8)},
+    # Temperature lags
+    **{f"Temperature_lag{i}d": [temp_inputs[i-1]] for i in range(1, 5)},
+    # Relative Humidity lags
+    **{f"Relative_humidity_lag{i}d": [rh_inputs[i-1]] for i in range(1, 8)},
+    # Water Level lags
+    **{f"Water_level_lag{i}d": [wl_inputs[i-1]] for i in range(1, 8)}
 })
 
 # -----------------------------
 # Prediction button
 # -----------------------------
-
 if st.button("Predict Water Level"):
     prediction = model.predict(input_data)[0]
-    st.success(f"Predicted Water Level: {prediction:.2f}")
+    st.success(f"Predicted Water Level: {prediction:.2f} m")
