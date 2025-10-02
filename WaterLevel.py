@@ -29,8 +29,8 @@ pred_date = st.date_input(
 start_date = pred_date - timedelta(days=7)  # H-6
 end_date = pred_date - timedelta(days=1)
 
-st.write(f"Prediksi Water Level untuk tanggal **{pred_date}** menggunakan data harian dari Open-Meteo API")
-st.write(f"Data API akan diambil dari **{start_date}** sampai **{end_date}**")
+st.write(f"Prediksi Water Level untuk tanggal **{pred_date.strftime("%d %B %Y")}** menggunakan data harian dari Open-Meteo API")
+st.write(f"Data API akan diambil dari **{start_date.strftime("%d %B %Y")}** sampai **{end_date.strftime("%d %B %Y")}**")
 
 # -----------------------------
 # Input manual Water Level H sampai H-6
@@ -71,7 +71,7 @@ if st.button("Fetch Data & Predict"):
         "relative_humidity": data["daily"]["relative_humidity_2m_mean"]
     })
     
-    df["time"] = pd.to_datetime(df["time"]).dt.date
+    df["time"] = pd.to_datetime(df["time"]).dt.date.strftime("%d %B %Y")
     df.set_index("time", inplace=True)
     
     st.subheader("Preview API Data")
