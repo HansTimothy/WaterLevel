@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 # -----------------------------
 model = joblib.load("best_model.pkl")
 
+st.title("Water Level Prediction Dashboard 🌊")
+
 # -----------------------------
 # Prediction date = H+1
 # -----------------------------
@@ -24,7 +26,6 @@ pred_date = st.date_input(
 start_date = pred_date - timedelta(days=7)  # H-6
 end_date = pred_date - timedelta(days=1)
 
-st.title("Water Level Prediction Dashboard 🌊")
 st.write(f"Prediksi Water Level untuk tanggal **{pred_date}** menggunakan data harian dari Open-Meteo API")
 st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 
