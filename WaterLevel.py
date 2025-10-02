@@ -12,9 +12,14 @@ from datetime import datetime, timedelta
 model = joblib.load("best_model.pkl")
 
 # -----------------------------
-# Prediction date = today
+# Prediction date = H+1
 # -----------------------------
-pred_date = datetime.today().date() + timedelta(days=1)
+today = datetime.today().date()
+pred_date = st.date_input(
+    "Tanggal prediksi",
+    value=today + timedelta(days=1),   # default H+1
+    max_value=today + timedelta(days=1)
+)
 
 start_date = pred_date - timedelta(days=7)  # H-6
 end_date = pred_date - timedelta(days=1)
