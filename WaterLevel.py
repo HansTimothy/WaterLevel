@@ -35,8 +35,7 @@ wl_dates = [pred_date - timedelta(days=i) for i in range(1, 8)]
 wl_inputs = [
     st.number_input(
         f" Water Level **{d.strftime('%d %B %Y')}**",
-        value=21.0-i*0.1,
-        step=0.1,
+        value=20.0,
         format="%.2f"
     )
     for i, d in enumerate(wl_dates)
@@ -63,7 +62,7 @@ if st.button("Fetch Data & Predict"):
         "relative_humidity": data["daily"]["relative_humidity_2m_mean"]
     })
     
-    df["time"] = pd.to_datetime(df["time"])
+    df["time"] = pd.to_datetime(df["time"]).dt.date
     df.set_index("time", inplace=True)
     
     st.subheader("Preview API Data")
