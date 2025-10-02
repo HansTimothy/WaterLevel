@@ -30,7 +30,7 @@ start_date = pred_date - timedelta(days=7)  # H-6
 end_date = pred_date - timedelta(days=1)
 
 st.write(f"Prediksi Water Level untuk tanggal **{pred_date}** menggunakan data harian dari Open-Meteo API")
-st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
+st.write(f"Data API akan diambil dari **{start_date}** sampai **{end_date}**")
 
 # -----------------------------
 # Input manual Water Level H sampai H-6
