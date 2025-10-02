@@ -18,12 +18,11 @@ st.title("Water Level Prediction Dashboard 🌊")
 # -----------------------------
 today = datetime.today().date()
 
-st.subheader(f"Pilih Tanggal Prediksi")
+st.subheader(f"Masukan Tanggal Prediksi")
 
 pred_date = st.date_input(
     "Tanggal prediksi",
     value=today + timedelta(days=1),   # default H+1
-    min_value=today + timedelta(days=1),
     max_value=today + timedelta(days=1)
 )
 
