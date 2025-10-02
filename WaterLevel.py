@@ -16,20 +16,20 @@ model = joblib.load("best_model.pkl")
 # -----------------------------
 pred_date = datetime.today().date() + timedelta(days=1)
 
-start_date = pred_date - timedelta(days=6)  # H-6
-end_date = pred_date
+start_date = pred_date - timedelta(days=7)  # H-6
+end_date = pred_date - timedelta(days=1)
 
 st.title("Water Level Prediction Dashboard 🌊")
 st.write(f"Prediksi Water Level untuk tanggal **{pred_date}** menggunakan data harian dari Open-Meteo API")
 st.write(f"Data API akan diambil dari {start_date} sampai {end_date}")
 
 # -----------------------------
-# Input manual Water Level Lag 1–7 hari
+# Input manual Water Level H sampai H-6
 # -----------------------------
-st.subheader(f"Masukkan Data Historis Water Level")
+st.subheader(f"Masukkan Data Water Level")
 
 # buat list tanggal H sampai H-6
-wl_dates = [pred_date - timedelta(days=i) for i in range(0, 7)]
+wl_dates = [pred_date - timedelta(days=i) for i in range(1, 8)]
 
 # input manual dengan tanggal sebagai label (bold)
 wl_inputs = [
