@@ -100,17 +100,19 @@ if st.button("Fetch Data & Predict"):
                 df.loc[d, "water_level"] = f"{float(wl_inputs[i]):.2f}"
 
         df_preview = df.copy()
+
+        numeric_cols = ["precipitation_sum", "temperature_mean", "relative_humidity", "water_level"]
         
         # Pastikan kolom water_level ada
         if "water_level" in df_preview.columns:
             # pop kolom water_level
             wl = df_preview.pop("water_level")
             # insert setelah kolom pertama (index 1)
-            df_preview.insert(1, "water_level", wl)
+            df_preview.insert(0, "water_level", wl)
 
 
         st.subheader("Preview Data Historis")
-        st.dataframe(df_preview)
+        st.dataframe(df_preview.set_properties(**{"text-align": "right"}, subset=numeric_cols))
 
         # buat input feature — gunakan safe_get untuk menghindari missing
         inp = {}
@@ -224,17 +226,20 @@ if st.button("Fetch Data & Predict"):
                 df.loc[pred_day, "water_level"] = round(prediction, 2)
 
         df_preview = df.copy()
+
+        # List kolom numeric untuk formatting
+        numeric_cols = ["precipitation_sum", "temperature_mean", "relative_humidity", "water_level"]
         
         # Pastikan kolom water_level ada
         if "water_level" in df_preview.columns:
             # pop kolom water_level
             wl = df_preview.pop("water_level")
             # insert setelah kolom pertama (index 1)
-            df_preview.insert(1, "water_level", wl)
+            df_preview.insert(0, "water_level", wl)
         
         # tampilkan dataframe
-        st.subheader("Preview Data (History + Forecast + Prediksi)")
-        st.dataframe(df_preview)
+        st.subheader("Preview Data (History + Forecast)")
+        st.dataframe(df_preview.set_properties(**{"text-align": "right"}, subset=numeric_cols))
     
         # Ambil hasil prediksi terakhir
         last_date, last_val = list(results.items())[-1]
