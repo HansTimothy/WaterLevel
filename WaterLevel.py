@@ -247,8 +247,7 @@ if st.button("Fetch Data & Predict"):
         st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
     
     # Siapkan data untuk plot
-    df_plot = df_preview.copy()
-    df_plot = df_plot.reset_index()
+    df_plot = df_preview.copy().reset_index()
     df_plot.rename(columns={"index": "Date"}, inplace=True)
     
     # Tentukan warna untuk highlight out-of-bounds
