@@ -231,8 +231,6 @@ if st.button("Fetch Data & Predict"):
         if "water_level" in df_preview.columns:
             wl = df_preview.pop("water_level")
             df_preview.insert(0, "water_level", wl)  # kolom pertama
-
-        df_preview = df_preview.iloc[:-1]
         
         # styling untuk highlight forecast
         def highlight_forecast(row):
