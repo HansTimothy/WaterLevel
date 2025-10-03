@@ -99,6 +99,13 @@ if st.button("Fetch Data & Predict"):
             if d in df.index:
                 df.loc[d, "water_level"] = f"{float(wl_inputs[i]):.2f}"
 
+        # Pastikan kolom water_level ada
+        if "water_level" in df_preview.columns:
+            # pop kolom water_level
+            wl = df_preview.pop("water_level")
+            # insert setelah kolom pertama (index 1)
+            df_preview.insert(1, "water_level", wl)
+
 
         st.subheader("Preview Data Historis")
         st.dataframe(df)
@@ -213,7 +220,14 @@ if st.button("Fetch Data & Predict"):
             # update df (biar preview langsung terlihat)
             if pred_day in df.index:
                 df.loc[pred_day, "water_level"] = round(prediction, 2)
-    
+
+        # Pastikan kolom water_level ada
+        if "water_level" in df_preview.columns:
+            # pop kolom water_level
+            wl = df_preview.pop("water_level")
+            # insert setelah kolom pertama (index 1)
+            df_preview.insert(1, "water_level", wl)
+        
         # tampilkan dataframe
         st.subheader("Preview Data (History + Forecast + Prediksi)")
         st.dataframe(df)
