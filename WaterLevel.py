@@ -155,7 +155,7 @@ if st.button("Fetch Data & Predict"):
             "relative_humidity": forecast["daily"]["relative_humidity_2m_mean"]
         })
         df_forecast = df_forecast.iloc[1:]
-        df_forecast = df_forecast.drop(df.index[n_days+1:])
+        df_forecast = df_forecast.drop(df.index[n_days:])
         df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
 
         df = pd.concat([df_hist, df_forecast]).drop_duplicates().sort_values("time")
