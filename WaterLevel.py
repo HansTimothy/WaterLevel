@@ -38,7 +38,7 @@ features = [
 # -----------------------------
 # Tentukan tanggal untuk input Water Level manual
 # -----------------------------
-st.subheader("Masukkan Data Water Level (manual)")
+st.subheader("Masukkan Data Water Level")
 
 if pred_date <= today + timedelta(days=1):
     # Prediksi untuk masa lalu atau H+1:
@@ -138,6 +138,8 @@ if st.button("Fetch Data & Predict"):
         })
         df_hist["time"] = pd.to_datetime(df_hist["time"]).dt.date
 
+        n_days = (pred_date - today).days  # misal H+2 -> n_days=2 (pred H+1, lalu H+2)
+        
         # Ambil forecast (H+0..H+7)
         url_forecast = (
             f"https://api.open-meteo.com/v1/forecast?"
@@ -153,19 +155,19 @@ if st.button("Fetch Data & Predict"):
             "relative_humidity": forecast["daily"]["relative_humidity_2m_mean"]
         })
         df_forecast = df_forecast.iloc[1:]
+        df_forecast = df_forecast.drop(df.index[n_days+1:])
         df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
 
         df = pd.concat([df_hist, df_forecast]).drop_duplicates().sort_values("time")
         df.set_index("time", inplace=True)
 
-        st.subheader("Preview Data (Hist + Forecast)")
+        st.subheader("Preview Data (History + Forecast)")
         st.dataframe(df)
 
         # water_level_lags: wl_inputs[0] harus jadi nilai terbaru (hari ini)
         water_level_lags = wl_inputs[:]  # order: [H0, H-1, H-2, ..., H-6]
 
         results = {}
-        n_days = (pred_date - today).days  # misal H+2 -> n_days=2 (pred H+1, lalu H+2)
         for step in range(1, n_days + 1):
             pred_day = today + timedelta(days=step)
 
