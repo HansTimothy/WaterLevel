@@ -248,3 +248,46 @@ if st.button("Fetch Data & Predict"):
         st.subheader("Hasil Prediksi")
         st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
 
+    # Ambil kolom yang diperlukan
+    # Ambil kolom yang diperlukan
+    df_plot = df.reset_index()[["time", "water_level"]].copy()
+    df_plot.rename(columns={"time": "Date"}, inplace=True)
+    
+    # Tentukan warna: merah jika non-sailable, biru jika normal
+    lower_limit = 19.5
+    upper_limit = 26.5
+    df_plot["color"] = df_plot["water_level"].apply(lambda x: "red" if (x < lower_limit or x > upper_limit) else "blue")
+    
+    # Highlight tanggal prediksi terakhir
+    pred_date = df_plot["Date"].max()  # asumsikan prediksi terakhir ada di baris terakhir
+    df_plot["marker_size"] = df_plot["Date"].apply(lambda x: 15 if x == pred_date else 10)
+    df_plot["marker_color"] = df_plot["Date"].apply(lambda x: "green" if x == pred_date else df_plot.loc[df_plot["Date"] == x, "color"].values[0])
+    
+    # Buat figure
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=df_plot["Date"],
+        y=df_plot["water_level"],
+        mode="lines+markers",
+        marker=dict(color=df_plot["marker_color"], size=df_plot["marker_size"]),
+        line=dict(color="blue", width=2),
+        name="Water Level"
+    ))
+    
+    # Tambahkan batas atas/bawah
+    fig.add_hline(y=lower_limit, line=dict(color="orange", width=2, dash="dash"),
+                  annotation_text="Lower Limit", annotation_position="bottom left")
+    fig.add_hline(y=upper_limit, line=dict(color="orange", width=2, dash="dash"),
+                  annotation_text="Upper Limit", annotation_position="top left")
+    
+    fig.update_layout(
+        title="Water Level Dashboard 🌊",
+        xaxis_title="Date",
+        yaxis_title="Water Level (m)",
+        xaxis=dict(tickangle=-45),
+        yaxis=dict(range=[lower_limit-1, upper_limit+1]),
+        height=500
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
