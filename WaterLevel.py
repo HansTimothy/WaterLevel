@@ -259,7 +259,7 @@ if st.button("Fetch Data & Predict"):
     
     # Pisahkan histori dan prediksi
     df_hist = df_plot[df_plot["Date"] <= today]
-    df_pred = df_plot[df_plot["Date"] > today]
+    df_pred = df_plot[df_plot["Date"] >+ today]
     
     # Prediksi aman dan tidak aman
     df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
@@ -283,7 +283,7 @@ if st.button("Fetch Data & Predict"):
         x=df_pred_safe["Date"],
         y=df_pred_safe["water_level"],
         mode="lines+markers",
-        line=dict(color="black", width=2),
+        line=dict(color="black", width=2, dash="dash"),
         marker=dict(color="green", size=8),
         name="Prediction (Loadable)"
     ))
@@ -293,7 +293,7 @@ if st.button("Fetch Data & Predict"):
         x=df_pred_unsafe["Date"],
         y=df_pred_unsafe["water_level"],
         mode="lines+markers",
-        line=dict(color="black", width=2),
+        line=dict(color="black", width=2, dash="dash"),
         marker=dict(color="red", size=8),
         name="Prediction (Unloadable)"
     ))
