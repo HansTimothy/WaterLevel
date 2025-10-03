@@ -93,6 +93,12 @@ if st.button("Fetch Data & Predict"):
         df["time"] = pd.to_datetime(df["time"]).dt.date
         df.set_index("time", inplace=True)
 
+        # Tambah kolom water level manual
+        df["water_level"] = None
+        for i, d in enumerate(wl_dates):
+            if d in df.index:
+                df.loc[d, "water_level"] = wl_inputs[i]
+
         st.subheader("Preview Data Historis")
         st.dataframe(df)
 
@@ -160,6 +166,19 @@ if st.button("Fetch Data & Predict"):
         df = pd.concat([df_hist, df_forecast]).drop_duplicates().sort_values("time")
         df.set_index("time", inplace=True)
 
+        # Tambah kolom water level
+        df["water_level"] = None
+        
+        # Isi dari input manual (H0..H-6)
+        for i, d in enumerate(wl_dates):
+            if d in df.index:
+                df.loc[d, "water_level"] = wl_inputs[i]
+        
+        # Isi dari hasil prediksi (H+1..pred_date)
+        for d, val in results.items():
+            if d in df.index:
+                df.loc[d, "water_level"] = val
+        
         st.subheader("Preview Data (History + Forecast)")
         st.dataframe(df)
 
