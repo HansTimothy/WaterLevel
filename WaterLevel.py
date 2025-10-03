@@ -322,7 +322,7 @@ if st.button("Fetch Data & Predict"):
     fig.update_layout(
         title="Water Level Dashboard 🌊",
         xaxis_title="Date",
-        yaxis_title="Water Level (m)", xaxis=dict(tickangle=-90, tickmode="array", tickvals=all_dates, ticktext=tick_text),
+        yaxis_title="Water Level (m)", xaxis=dict(tickangle=90, tickmode="array", tickvals=all_dates, ticktext=tick_text),
         yaxis=dict(autorange=True),
         height=500
     )
