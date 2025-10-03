@@ -112,7 +112,7 @@ if st.button("Fetch Data & Predict"):
 
 
         st.subheader("Preview Data Historis")
-        st.dataframe(df_preview.style..format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
+        st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
 
         # buat input feature — gunakan safe_get untuk menghindari missing
         inp = {}
