@@ -277,6 +277,14 @@ if st.button("Fetch Data & Predict"):
         marker=dict(color="blue", size=8),
         name="Historical"
     ))
+
+    # Plot prediksi
+    fig.add_trace(go.Scatter(
+        x=df_pred["Date"],
+        y=df_pred["water_level"],
+        mode="lines",
+        line=dict(color="black", width=2, dash="dash"),
+    ))
     
     # Plot prediksi aman (loadable)
     fig.add_trace(go.Scatter(
