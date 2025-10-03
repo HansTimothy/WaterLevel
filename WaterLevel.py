@@ -14,7 +14,7 @@ st.title("Water Level Prediction Dashboard 🌊")
 
 today = datetime.today().date()
 
-st.subheader("Pilih Tanggal Prediksi Water Level")
+st.subheader("Pilih Tanggal Prediksi Water Level (Maksimal H+11)")
 
 pred_date = st.date_input(
     "Tanggal Prediksi Water Level",
@@ -50,7 +50,7 @@ else:
     wl_dates = [today - timedelta(days=i) for i in range(0, 7)]
 
 wl_inputs = [
-    st.number_input(f"Water Level {d.strftime('%d %B %Y')}", value=20.0, format="%.2f")
+    st.number_input(f"Water Level **{d.strftime('%d %B %Y')}**", value=20.0, format="%.2f")
     for d in wl_dates
 ]
 
