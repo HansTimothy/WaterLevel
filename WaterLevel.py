@@ -14,7 +14,7 @@ st.title("Water Level Prediction Dashboard 🌊")
 
 today = datetime.today().date()
 
-st.subheader("Pilih Tanggal Prediksi Water Level (Maksimal 16 Hari Ke Depan)")
+st.subheader("Pilih Tanggal Prediksi Water Level (MAX H+16)")
 
 pred_date = st.date_input(
     "Tanggal Prediksi Water Level",
