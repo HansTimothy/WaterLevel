@@ -257,14 +257,14 @@ if st.button("Fetch Data & Predict"):
     upper_limit = 26.5
     today = datetime.today().date()
     
-    # Marker tetap sama, tapi warnanya merah jika non-sailable
-    df_plot["marker_color"] = df_plot["water_level"].apply(
-        lambda x: "red" if (x < lower_limit or x > upper_limit) else "green"
-    )
-    
     # Pisahkan histori dan prediksi
     df_hist = df_plot[df_plot["Date"] <= today]
-    df_pred = df_plot[df_plot["Date"] >= today]
+    df_pred = df_plot[df_plot["Date"] > today]
+    
+    # Tentukan warna marker untuk prediksi
+    df_pred["marker_color"] = df_pred["water_level"].apply(
+        lambda x: "red" if (x < lower_limit or x > upper_limit) else "green"
+    )
     
     # Buat figure
     fig = go.Figure()
@@ -275,7 +275,7 @@ if st.button("Fetch Data & Predict"):
         y=df_hist["water_level"],
         mode="lines+markers",
         line=dict(color="blue", width=2),
-        marker=dict(color=df_hist["marker_color"], size=8),
+        marker=dict(color="blue", size=8),
         name="Historis"
     ))
     
@@ -284,7 +284,7 @@ if st.button("Fetch Data & Predict"):
         x=df_pred["Date"],
         y=df_pred["water_level"],
         mode="lines+markers",
-        line=dict(color="blue", width=2, dash="dash"),  # putus-putus untuk prediksi
+        line=dict(color="black", width=2),
         marker=dict(color=df_pred["marker_color"], size=8),
         name="Prediksi"
     ))
