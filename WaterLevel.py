@@ -249,33 +249,47 @@ if st.button("Fetch Data & Predict"):
         st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
 
     # Ambil kolom yang diperlukan
-    # Ambil kolom yang diperlukan
     df_plot = df.reset_index()[["time", "water_level"]].copy()
     df_plot.rename(columns={"time": "Date"}, inplace=True)
     
     # Tentukan warna: merah jika non-sailable, biru jika normal
     lower_limit = 19.5
     upper_limit = 26.5
-    df_plot["color"] = df_plot["water_level"].apply(lambda x: "red" if (x < lower_limit or x > upper_limit) else "blue")
+    today = datetime.today().date()
     
-    # Highlight tanggal prediksi terakhir
-    pred_date = df_plot["Date"].max()  # asumsikan prediksi terakhir ada di baris terakhir
-    df_plot["marker_size"] = df_plot["Date"].apply(lambda x: 15 if x == pred_date else 10)
-    df_plot["marker_color"] = df_plot["Date"].apply(lambda x: "green" if x == pred_date else df_plot.loc[df_plot["Date"] == x, "color"].values[0])
+    # Marker tetap sama, tapi warnanya merah jika non-sailable
+    df_plot["marker_color"] = df_plot["water_level"].apply(
+        lambda x: "red" if (x < lower_limit or x > upper_limit) else "green"
+    )
+    
+    # Pisahkan histori dan prediksi
+    df_hist = df_plot[df_plot["Date"] <= today]
+    df_pred = df_plot[df_plot["Date"] > today]
     
     # Buat figure
     fig = go.Figure()
     
+    # Plot histori
     fig.add_trace(go.Scatter(
-        x=df_plot["Date"],
-        y=df_plot["water_level"],
+        x=df_hist["Date"],
+        y=df_hist["water_level"],
         mode="lines+markers",
-        marker=dict(color=df_plot["marker_color"], size=df_plot["marker_size"]),
-        line=dict(color="blue", width=2),
-        name="Water Level"
+        line=dict(color="black", width=2),
+        marker=dict(color=df_hist["marker_color"], size=10),
+        name="Historis"
     ))
     
-    # Tambahkan batas atas/bawah
+    # Plot prediksi
+    fig.add_trace(go.Scatter(
+        x=df_pred["Date"],
+        y=df_pred["water_level"],
+        mode="lines+markers",
+        line=dict(color="#bce4f6", width=2, dash="dash"),  # putus-putus untuk prediksi
+        marker=dict(color=df_pred["marker_color"], size=10),
+        name="Prediksi"
+    ))
+    
+    # Batas sailable
     fig.add_hline(y=lower_limit, line=dict(color="orange", width=2, dash="dash"),
                   annotation_text="Lower Limit", annotation_position="bottom left")
     fig.add_hline(y=upper_limit, line=dict(color="orange", width=2, dash="dash"),
