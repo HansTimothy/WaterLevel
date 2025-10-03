@@ -19,8 +19,7 @@ st.subheader("Pilih Tanggal Prediksi Water Level")
 pred_date = st.date_input(
     "Tanggal Prediksi Water Level",
     value=today + timedelta(days=1),
-    min_value=today - timedelta(days=30),
-    max_value=today + timedelta(days=7)
+    max_value=today + timedelta(days=16)
 )
 
 # features (dipakai di kedua skenario)
@@ -161,7 +160,7 @@ if st.button("Fetch Data & Predict"):
             f"https://api.open-meteo.com/v1/forecast?"
             f"latitude=-0.61&longitude=114.8"
             f"&daily=temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean"
-            f"&timezone=Asia%2FSingapore"
+            f"&timezone=Asia%2FSingapore&forecast_days=16"
         )
         forecast = requests.get(url_forecast).json()
         df_forecast = pd.DataFrame({
