@@ -274,8 +274,8 @@ if st.button("Fetch Data & Predict"):
         x=df_hist["Date"],
         y=df_hist["water_level"],
         mode="lines+markers",
-        line=dict(color="black", width=2),
-        marker=dict(color=df_hist["marker_color"], size=6),
+        line=dict(color="blue", width=2),
+        marker=dict(color=df_hist["marker_color"], size=8),
         name="Historis"
     ))
     
@@ -284,8 +284,8 @@ if st.button("Fetch Data & Predict"):
         x=df_pred["Date"],
         y=df_pred["water_level"],
         mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),  # putus-putus untuk prediksi
-        marker=dict(color=df_pred["marker_color"], size=6),
+        line=dict(color="green", width=2, dash="dash"),  # putus-putus untuk prediksi
+        marker=dict(color=df_pred["marker_color"], size=8),
         name="Prediksi"
     ))
     
