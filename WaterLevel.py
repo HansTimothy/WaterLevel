@@ -259,7 +259,7 @@ if st.button("Fetch Data & Predict"):
     
     # Pisahkan histori dan prediksi
     df_hist = df_plot[df_plot["Date"] <= today]
-    df_pred = df_plot[df_plot["Date"] >+ today]
+    df_pred = df_plot[df_plot["Date"] >= today]
     
     # Prediksi aman dan tidak aman
     df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
