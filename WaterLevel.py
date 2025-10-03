@@ -275,7 +275,7 @@ if st.button("Fetch Data & Predict"):
         y=df_hist["water_level"],
         mode="lines+markers",
         line=dict(color="black", width=2),
-        marker=dict(color=df_hist["marker_color"], size=10),
+        marker=dict(color=df_hist["marker_color"], size=6),
         name="Historis"
     ))
     
@@ -284,15 +284,15 @@ if st.button("Fetch Data & Predict"):
         x=df_pred["Date"],
         y=df_pred["water_level"],
         mode="lines+markers",
-        line=dict(color="#bce4f6", width=2, dash="dash"),  # putus-putus untuk prediksi
-        marker=dict(color=df_pred["marker_color"], size=10),
+        line=dict(color="black", width=2, dash="dash"),  # putus-putus untuk prediksi
+        marker=dict(color=df_pred["marker_color"], size=6),
         name="Prediksi"
     ))
     
     # Batas sailable
-    fig.add_hline(y=lower_limit, line=dict(color="orange", width=2, dash="dash"),
+    fig.add_hline(y=lower_limit, line=dict(color="red", width=2, dash="dash"),
                   annotation_text="Lower Limit", annotation_position="bottom left")
-    fig.add_hline(y=upper_limit, line=dict(color="orange", width=2, dash="dash"),
+    fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
                   annotation_text="Upper Limit", annotation_position="top left")
     
     fig.update_layout(
