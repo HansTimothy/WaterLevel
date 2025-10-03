@@ -193,5 +193,9 @@ if st.button("Fetch Data & Predict"):
             water_level_lags = [prediction] + water_level_lags[:-1]
 
         st.subheader("Hasil Prediksi")
-        for d, val in results.items():
-            st.success(f"Predicted Water Level on {d.strftime('%d %B %Y')}: {val:.2f} m")
+        
+        # Ambil data terakhir
+        last_date, last_val = list(results.items())[-1]
+        
+        st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
+
