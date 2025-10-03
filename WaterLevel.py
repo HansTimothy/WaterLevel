@@ -259,12 +259,11 @@ if st.button("Fetch Data & Predict"):
     
     # Pisahkan histori dan prediksi
     df_hist = df_plot[df_plot["Date"] <= today]
-    df_pred = df_plot[df_plot["Date"] >= today]
+    df_pred = df_plot[df_plot["Date"] > today]
     
-    # Tentukan warna marker untuk prediksi
-    df_pred["marker_color"] = df_pred["water_level"].apply(
-        lambda x: "red" if (x < lower_limit or x > upper_limit) else "green"
-    )
+    # Prediksi aman dan tidak aman
+    df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
+    df_pred_unsafe = df_pred[(df_pred["water_level"] < lower_limit) | (df_pred["water_level"] > upper_limit)]
     
     # Buat figure
     fig = go.Figure()
@@ -276,20 +275,30 @@ if st.button("Fetch Data & Predict"):
         mode="lines+markers",
         line=dict(color="blue", width=2),
         marker=dict(color="blue", size=8),
-        name="Historis"
+        name="Historical"
     ))
     
-    # Plot prediksi
+    # Plot prediksi aman (loadable)
     fig.add_trace(go.Scatter(
-        x=df_pred["Date"],
-        y=df_pred["water_level"],
+        x=df_pred_safe["Date"],
+        y=df_pred_safe["water_level"],
         mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),
-        marker=dict(color=df_pred["marker_color"], size=8),
-        name="Prediksi"
+        line=dict(color="black", width=2),
+        marker=dict(color="green", size=8),
+        name="Prediction (Loadable)"
     ))
     
-    # Batas sailable
+    # Plot prediksi tidak aman (unloadable)
+    fig.add_trace(go.Scatter(
+        x=df_pred_unsafe["Date"],
+        y=df_pred_unsafe["water_level"],
+        mode="lines+markers",
+        line=dict(color="black", width=2),
+        marker=dict(color="red", size=8),
+        name="Prediction (Unloadable)"
+    ))
+    
+    # Batas loadable
     fig.add_hline(y=lower_limit, line=dict(color="red", width=2, dash="dash"),
                   annotation_text="Lower Limit", annotation_position="bottom left")
     fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
