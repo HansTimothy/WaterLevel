@@ -170,6 +170,7 @@ if st.button("Fetch Data & Predict"):
     
         # Tambah kolom water level
         df["water_level"] = None
+        df["water_level"] = df["water_level"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
     
         # Isi dari input manual (H0..H-6)
         for i, d in enumerate(wl_dates):
