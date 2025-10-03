@@ -170,7 +170,7 @@ if st.button("Fetch Data & Predict"):
             "relative_humidity": forecast["daily"]["relative_humidity_2m_mean"]
         })
         # ambil hanya sampai n_days (H+1..H+n)
-        df_forecast = df_forecast.iloc[1:n_days+1]
+        df_forecast = df_forecast.iloc[1:n_days]
         df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
         
         # gabungkan histori + forecast
