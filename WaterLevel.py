@@ -107,7 +107,7 @@ if st.button("Fetch Data & Predict"):
             df_preview.insert(0, "water_level", wl)
         
         # List kolom numeric untuk formatting
-        numeric_cols = ["precipitation_sum", "temperature_mean", "relative_humidity", "water_level"]
+        numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
         
         st.subheader("Preview Data Historis")
         st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
@@ -230,7 +230,7 @@ if st.button("Fetch Data & Predict"):
             df_preview.insert(0, "water_level", wl)
         
         # List kolom numeric untuk formatting
-        numeric_cols = ["precipitation_sum", "temperature_mean", "relative_humidity", "water_level"]
+        numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
         
         st.subheader("Preview Data (History + Forecast)")
         st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
