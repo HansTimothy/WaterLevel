@@ -99,8 +99,26 @@ if st.button("Fetch Data & Predict"):
             if d in df.index:
                 df.loc[d, "water_level"] = f"{float(wl_inputs[i]):.2f}"
 
+        # Setelah loop prediksi selesai dan water_level sudah diisi
+        df_preview = df.copy()
+        
+        # --- letakkan di sini ---
+        # Pindahkan kolom water_level jadi kolom kedua
+        if "water_level" in df_preview.columns:
+            wl = df_preview.pop("water_level")
+            df_preview.insert(1, "water_level", wl)
+        # --- sampai sini ---
+        
+        # List kolom numeric untuk formatting
+        numeric_cols = ["precipitation_sum", "temperature_mean", "relative_humidity", "water_level"]
+        
+        # Format 2 desimal dan rata kanan
+        for col in numeric_cols:
+            if col in df_preview.columns:
+                df_preview[col] = df_preview[col].apply(lambda x: round(x, 2) if pd.notnull(x) else None)
+        
         st.subheader("Preview Data Historis")
-        st.dataframe(df_preview.style.set_properties(**{"text-align": "right"}))
+        st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
 
         # buat input feature — gunakan safe_get untuk menghindari missing
         inp = {}
