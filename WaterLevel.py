@@ -233,7 +233,7 @@ if st.button("Fetch Data & Predict"):
         
         # styling untuk highlight forecast
         def highlight_forecast(row):
-            return ['background-color: #008634' if row.name in forecast_dates else '' for _ in row]
+            return ['background-color: #bce4f6' if row.name in forecast_dates else '' for _ in row]
         
         numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
         
