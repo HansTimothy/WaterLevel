@@ -1,7 +1,6 @@
 # WaterLevel_API.py
 import streamlit as st
 import pandas as pd
-import numpy as np
 import requests
 import joblib
 from datetime import datetime, timedelta
@@ -128,7 +127,7 @@ if st.button("Fetch Data & Predict"):
             # Temperature lags
             **{f"Temperature_lag{i}d": [df.loc[current_date - timedelta(days=i), "temperature_mean"]]
                if (current_date - timedelta(days=i)) in df.index else [0.0]
-               for i in range(1, 4+1)},
+               for i in range(1, 5)},
             # Relative Humidity lags
             **{f"Relative_humidity_lag{i}d": [df.loc[current_date - timedelta(days=i), "relative_humidity"]]
                if (current_date - timedelta(days=i)) in df.index else [0.0]
@@ -137,7 +136,8 @@ if st.button("Fetch Data & Predict"):
             **{f"Water_level_lag{i}d": [wl_series[f'lag{i}']] for i in range(1, 8)}
         })
 
-        input_data = input_data[features].fillna(0.0)
+        # pastikan numeric
+        input_data = input_data[features].fillna(0.0).astype(float)
 
         # Prediksi
         pred = model.predict(input_data)[0]
