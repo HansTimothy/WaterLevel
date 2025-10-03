@@ -97,7 +97,8 @@ if st.button("Fetch Data & Predict"):
         df["water_level"] = None
         for i, d in enumerate(wl_dates):
             if d in df.index:
-                df.loc[d, "water_level"] = wl_inputs[i]
+                df.loc[d, "water_level"] = f"{float(wl_inputs[i]):.2f}"
+
 
         st.subheader("Preview Data Historis")
         st.dataframe(df)
@@ -170,12 +171,11 @@ if st.button("Fetch Data & Predict"):
     
         # Tambah kolom water level
         df["water_level"] = None
-        df["water_level"] = df["water_level"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
     
         # Isi dari input manual (H0..H-6)
         for i, d in enumerate(wl_dates):
             if d in df.index:
-                df.loc[d, "water_level"] = wl_inputs[i]
+                df.loc[d, "water_level"] = f"{float(wl_inputs[i]):.2f}"
     
         # Siapkan lags untuk water level (H0 terbaru -> index 0)
         water_level_lags = wl_inputs[:]  # [H0, H-1, H-2, ..., H-6]
@@ -212,7 +212,7 @@ if st.button("Fetch Data & Predict"):
     
             # update df (biar preview langsung terlihat)
             if pred_day in df.index:
-                df.loc[pred_day, "water_level"] = prediction
+                df.loc[pred_day, "water_level"] = round(prediction, 2)
     
         # tampilkan dataframe
         st.subheader("Preview Data (History + Forecast + Prediksi)")
