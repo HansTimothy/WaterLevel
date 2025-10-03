@@ -239,7 +239,7 @@ if st.button("Fetch Data & Predict"):
         
         # tampilkan dataframe
         st.subheader("Preview Data (History + Forecast)")
-        st.dataframe(df_preview.style..format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
+        st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
     
         # Ambil hasil prediksi terakhir
         last_date, last_val = list(results.items())[-1]
