@@ -264,7 +264,7 @@ if st.button("Fetch Data & Predict"):
     
     # Pisahkan histori dan prediksi
     df_hist = df_plot[df_plot["Date"] <= today]
-    df_pred = df_plot[df_plot["Date"] > today]
+    df_pred = df_plot[df_plot["Date"] >= today]
     
     # Buat figure
     fig = go.Figure()
