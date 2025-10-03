@@ -1,4 +1,4 @@
-# WaterLevel_API.py
+# WaterLevel_API_fixed.py
 import streamlit as st
 import pandas as pd
 import requests
@@ -18,31 +18,51 @@ st.subheader("Pilih Tanggal Prediksi Water Level")
 
 pred_date = st.date_input(
     "Tanggal Prediksi Water Level",
-    value=today + timedelta(days=1),   
-    min_value=today - timedelta(days=30),  # bisa pilih masa lalu
-    max_value=today + timedelta(days=7)    # atau sampai H+7
+    value=today + timedelta(days=1),
+    min_value=today - timedelta(days=30),
+    max_value=today + timedelta(days=7)
 )
 
+# features (dipakai di kedua skenario)
+features = [
+    "Precipitation_lag1d","Precipitation_lag2d","Precipitation_lag3d","Precipitation_lag4d",
+    "Precipitation_lag5d","Precipitation_lag6d","Precipitation_lag7d",
+    "Temperature_lag1d","Temperature_lag2d","Temperature_lag3d","Temperature_lag4d",
+    "Relative_humidity_lag1d","Relative_humidity_lag2d","Relative_humidity_lag3d",
+    "Relative_humidity_lag4d","Relative_humidity_lag5d","Relative_humidity_lag6d",
+    "Relative_humidity_lag7d",
+    "Water_level_lag1d","Water_level_lag2d","Water_level_lag3d","Water_level_lag4d",
+    "Water_level_lag5d","Water_level_lag6d","Water_level_lag7d",
+]
+
 # -----------------------------
-# Input manual Water Level
+# Tentukan tanggal untuk input Water Level manual
 # -----------------------------
-st.subheader("Masukkan Data Water Level")
+st.subheader("Masukkan Data Water Level (manual)")
 
 if pred_date <= today + timedelta(days=1):
-    # prediksi masa lalu atau H+1
-    wl_dates = [pred_date - timedelta(days=i) for i in range(0, 7)]
+    # Prediksi untuk masa lalu atau H+1:
+    # kita membutuhkan water level untuk pred_date-1 .. pred_date-7
+    wl_dates = [pred_date - timedelta(days=i) for i in range(1, 8)]
 else:
-    # prediksi H+2..H+7 → pakai data hari ini sampai H-6
+    # Prediksi H+2..H+7:
+    # user mau memasukkan water level dari hari ini (H0) sampai H-6
+    # sehingga wl_inputs[0] = hari ini (paling baru)
     wl_dates = [today - timedelta(days=i) for i in range(0, 7)]
 
 wl_inputs = [
-    st.number_input(
-        f"Water Level **{d.strftime('%d %B %Y')}**",
-        value=20.0,
-        format="%.2f"
-    )
+    st.number_input(f"Water Level {d.strftime('%d %B %Y')}", value=20.0, format="%.2f")
     for d in wl_dates
 ]
+
+# -----------------------------
+# Helper untuk ambil value dari df dengan fallback
+# -----------------------------
+def safe_get(df, date, col):
+    try:
+        return float(df.loc[date, col])
+    except Exception:
+        return 0.0
 
 # -----------------------------
 # Fetch data & predict
@@ -50,9 +70,11 @@ wl_inputs = [
 if st.button("Fetch Data & Predict"):
 
     if pred_date <= today + timedelta(days=1):
-        # --- Skenario 1: prediksi masa lalu atau H+1 ---
-        start_date = pred_date - timedelta(days=7)
-        end_date = pred_date - timedelta(days=1)
+        # -----------------------------
+        # Skenario 1: prediksi masa lalu / H+1 (pakai archive saja)
+        # -----------------------------
+        start_date = (pred_date - timedelta(days=7)).isoformat()
+        end_date = (pred_date - timedelta(days=1)).isoformat()
 
         url = (
             f"https://archive-api.open-meteo.com/v1/archive?"
@@ -74,35 +96,36 @@ if st.button("Fetch Data & Predict"):
         st.subheader("Preview Data Historis")
         st.dataframe(df)
 
-        # buat input feature
-        input_data = pd.DataFrame({
-            **{f"Precipitation_lag{i}d": [df["precipitation_sum"].iloc[-i]] for i in range(1, 8)},
-            **{f"Temperature_lag{i}d": [df["temperature_mean"].iloc[-i]] for i in range(1, 5)},
-            **{f"Relative_humidity_lag{i}d": [df["relative_humidity"].iloc[-i]] for i in range(1, 8)},
-            **{f"Water_level_lag{i}d": [wl_inputs[i]] for i in range(1, 8)}
-        })
+        # buat input feature — gunakan safe_get untuk menghindari missing
+        inp = {}
+        for i in range(1, 8):
+            date_i = pred_date - timedelta(days=i)
+            inp[f"Precipitation_lag{i}d"] = [safe_get(df, date_i, "precipitation_sum")]
+        for i in range(1, 5):
+            date_i = pred_date - timedelta(days=i)
+            inp[f"Temperature_lag{i}d"] = [safe_get(df, date_i, "temperature_mean")]
+        for i in range(1, 8):
+            date_i = pred_date - timedelta(days=i)
+            inp[f"Relative_humidity_lag{i}d"] = [safe_get(df, date_i, "relative_humidity")]
+        # WATER LEVEL: wl_inputs di-build sedemikian sehingga wl_inputs[0] == pred_date-1
+        for i in range(1, 8):
+            inp[f"Water_level_lag{i}d"] = [wl_inputs[i-1]]
 
-        features = [
-            "Precipitation_lag1d","Precipitation_lag2d","Precipitation_lag3d","Precipitation_lag4d",
-            "Precipitation_lag5d","Precipitation_lag6d","Precipitation_lag7d",
-            "Temperature_lag1d","Temperature_lag2d","Temperature_lag3d","Temperature_lag4d",
-            "Relative_humidity_lag1d","Relative_humidity_lag2d","Relative_humidity_lag3d",
-            "Relative_humidity_lag4d","Relative_humidity_lag5d","Relative_humidity_lag6d",
-            "Relative_humidity_lag7d",
-            "Water_level_lag1d","Water_level_lag2d","Water_level_lag3d","Water_level_lag4d",
-            "Water_level_lag5d","Water_level_lag6d","Water_level_lag7d",
-        ]
-        input_data = input_data[features].fillna(0.0)
+        input_data = pd.DataFrame(inp)[features].fillna(0.0)
 
         prediction = model.predict(input_data)[0]
         st.success(f"Predicted Water Level on {pred_date.strftime('%d %B %Y')}: {prediction:.2f} m")
 
     else:
-        # --- Skenario 2: prediksi H+2..H+7 ---
-        # Data historis H-6 .. H0
+        # -----------------------------
+        # Skenario 2: prediksi H+2..H+7 (pakai archive + forecast, looping)
+        # -----------------------------
+        # Ambil historis H-6 .. H0
+        start_hist = (today - timedelta(days=6)).isoformat()
+        end_hist = today.isoformat()
         url_hist = (
             f"https://archive-api.open-meteo.com/v1/archive?"
-            f"latitude=-0.61&longitude=114.8&start_date={today - timedelta(days=6)}&end_date={today}"
+            f"latitude=-0.61&longitude=114.8&start_date={start_hist}&end_date={end_hist}"
             f"&daily=temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean"
             f"&timezone=Asia%2FSingapore"
         )
@@ -115,7 +138,7 @@ if st.button("Fetch Data & Predict"):
         })
         df_hist["time"] = pd.to_datetime(df_hist["time"]).dt.date
 
-        # Data forecast H+1..H+7
+        # Ambil forecast (H+0..H+7)
         url_forecast = (
             f"https://api.open-meteo.com/v1/forecast?"
             f"latitude=-0.61&longitude=114.8"
@@ -131,32 +154,40 @@ if st.button("Fetch Data & Predict"):
         })
         df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
 
-        df = pd.concat([df_hist, df_forecast])
+        df = pd.concat([df_hist, df_forecast]).drop_duplicates().sort_values("time")
         df.set_index("time", inplace=True)
 
         st.subheader("Preview Data (Hist + Forecast)")
         st.dataframe(df)
 
-        results = {}
-        water_level_lags = wl_inputs[:]  # manual input
+        # water_level_lags: wl_inputs[0] harus jadi nilai terbaru (hari ini)
+        water_level_lags = wl_inputs[:]  # order: [H0, H-1, H-2, ..., H-6]
 
-        n_days = (pred_date - today).days
+        results = {}
+        n_days = (pred_date - today).days  # misal H+2 -> n_days=2 (pred H+1, lalu H+2)
         for step in range(1, n_days + 1):
             pred_day = today + timedelta(days=step)
 
-            input_data = pd.DataFrame({
-                **{f"Precipitation_lag{i}d": [df.loc[pred_day - timedelta(days=i), "precipitation_sum"]] for i in range(1, 8)},
-                **{f"Temperature_lag{i}d": [df.loc[pred_day - timedelta(days=i), "temperature_mean"]] for i in range(1, 5)},
-                **{f"Relative_humidity_lag{i}d": [df.loc[pred_day - timedelta(days=i), "relative_humidity"]] for i in range(1, 8)},
-                **{f"Water_level_lag{i}d": [water_level_lags[i]] for i in range(1, 8)}
-            })
+            inp = {}
+            for i in range(1, 8):
+                date_i = pred_day - timedelta(days=i)
+                inp[f"Precipitation_lag{i}d"] = [safe_get(df, date_i, "precipitation_sum")]
+            for i in range(1, 5):
+                date_i = pred_day - timedelta(days=i)
+                inp[f"Temperature_lag{i}d"] = [safe_get(df, date_i, "temperature_mean")]
+            for i in range(1, 8):
+                date_i = pred_day - timedelta(days=i)
+                inp[f"Relative_humidity_lag{i}d"] = [safe_get(df, date_i, "relative_humidity")]
+            # Water level lags: water_level_lags[0] adalah lag1 (paling baru)
+            for i in range(1, 8):
+                inp[f"Water_level_lag{i}d"] = [water_level_lags[i-1]]
 
-            input_data = input_data[features].fillna(0.0)
+            input_data = pd.DataFrame(inp)[features].fillna(0.0)
 
             prediction = model.predict(input_data)[0]
             results[pred_day] = prediction
 
-            # update lag
+            # update water level lags: masukkan prediksi terbaru sebagai lag1
             water_level_lags = [prediction] + water_level_lags[:-1]
 
         st.subheader("Hasil Prediksi")
