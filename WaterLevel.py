@@ -312,12 +312,17 @@ if st.button("Fetch Data & Predict"):
                   annotation_text="Lower Limit", annotation_position="bottom left")
     fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
                   annotation_text="Upper Limit", annotation_position="top left")
+
+    # Ambil semua tanggal yang mau ditampilkan
+    all_dates = df_plot["Date"]
+    
+    # Buat tick text dalam format dd/mm/yy
+    tick_text = [d.strftime("%d/%m/%y") for d in all_dates]
     
     fig.update_layout(
         title="Water Level Dashboard 🌊",
         xaxis_title="Date",
-        yaxis_title="Water Level (m)",
-        xaxis=dict(tickangle=-45,tickformat="%d/%m/%y"),
+        yaxis_title="Water Level (m)", xaxis=dict(tickangle=-90, tickmode="array", tickvals=all_dates, ticktext=tick_text),
         yaxis=dict(autorange=True),
         height=500
     )
