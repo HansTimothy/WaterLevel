@@ -152,9 +152,9 @@ if st.button("Fetch Data & Predict"):
             "relative_humidity": hist["daily"]["relative_humidity_2m_mean"]
         })
         df_hist["time"] = pd.to_datetime(df_hist["time"]).dt.date
-    
+        
         n_days = (pred_date - today).days  # misal H+2 -> n_days=2
-    
+        
         # Ambil forecast (H+0..H+7)
         url_forecast = (
             f"https://api.open-meteo.com/v1/forecast?"
@@ -170,28 +170,30 @@ if st.button("Fetch Data & Predict"):
             "relative_humidity": forecast["daily"]["relative_humidity_2m_mean"]
         })
         # ambil hanya sampai n_days (H+1..H+n)
-        df_forecast = df_forecast.iloc[1:n_days]
+        df_forecast = df_forecast.iloc[1:n_days+1]
         df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
-    
+        
         # gabungkan histori + forecast
         df = pd.concat([df_hist, df_forecast]).drop_duplicates().sort_values("time")
         df.set_index("time", inplace=True)
-    
+        
         # Tambah kolom water level
         df["water_level"] = None
-    
+        
         # Isi dari input manual (H0..H-6)
         for i, d in enumerate(wl_dates):
             if d in df.index:
                 df.loc[d, "water_level"] = round(float(wl_inputs[i]), 2)
-    
+        
         # Siapkan lags untuk water level (H0 terbaru -> index 0)
         water_level_lags = wl_inputs[:]  # [H0, H-1, H-2, ..., H-6]
-    
+        
         results = {}
+        forecast_dates = []  # untuk highlight
+        
         for step in range(1, n_days + 1):
             pred_day = today + timedelta(days=step)
-    
+        
             inp = {}
             # lags cuaca
             for i in range(1, 8):
@@ -203,38 +205,7 @@ if st.button("Fetch Data & Predict"):
             for i in range(1, 8):
                 date_i = pred_day - timedelta(days=i)
                 inp[f"Relative_humidity_lag{i}d"] = [safe_get(df, date_i, "relative_humidity")]
-    
+        
             # lags water level
             for i in range(1, 8):
-                inp[f"Water_level_lag{i}d"] = [water_level_lags[i-1]]
-    
-            # buat dataframe input
-            input_data = pd.DataFrame(inp)[features].fillna(0.0)
-    
-            # prediksi
-            prediction = model.predict(input_data)[0]
-            results[pred_day] = prediction
-    
-            # update lags
-            water_level_lags = [prediction] + water_level_lags[:-1]
-    
-            # update df (biar preview langsung terlihat)
-            if pred_day in df.index:
-                df.loc[pred_day, "water_level"] = round(prediction, 2)
-
-        df_preview = df.copy()
-        
-        if "water_level" in df_preview.columns:
-            wl = df_preview.pop("water_level")
-            df_preview.insert(0, "water_level", wl)
-        
-        # List kolom numeric untuk formatting
-        numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
-        
-        st.subheader("Preview Data (History + Forecast)")
-        st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
-    
-        # Ambil hasil prediksi terakhir
-        last_date, last_val = list(results.items())[-1]
-        st.subheader("Hasil Prediksi")
-        st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
+                inp[f"Water_level_lag{i}d"] = [water_level_lags]()
