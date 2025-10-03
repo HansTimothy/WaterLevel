@@ -317,7 +317,7 @@ if st.button("Fetch Data & Predict"):
         title="Water Level Dashboard 🌊",
         xaxis_title="Date",
         yaxis_title="Water Level (m)",
-        xaxis=dict(tickangle=-45),
+        xaxis=dict(tickangle=-45,tickformat="%d/%m/%y"),
         yaxis=dict(autorange=True),
         height=500
     )
