@@ -171,7 +171,7 @@ if st.button("Fetch Data & Predict"):
             "relative_humidity": forecast["daily"]["relative_humidity_2m_mean"]
         })
         # ambil hanya sampai n_days (H+1..H+n)
-        df_forecast = df_forecast.iloc[1:n_days]
+        df_forecast = df_forecast.iloc[1:n_days+1]
         df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
         
         # gabungkan histori + forecast
@@ -231,6 +231,8 @@ if st.button("Fetch Data & Predict"):
         if "water_level" in df_preview.columns:
             wl = df_preview.pop("water_level")
             df_preview.insert(0, "water_level", wl)  # kolom pertama
+
+        df_preview = df_preview.iloc[:-1]
         
         # styling untuk highlight forecast
         def highlight_forecast(row):
@@ -245,40 +247,4 @@ if st.button("Fetch Data & Predict"):
         last_date, last_val = list(results.items())[-1]
         st.subheader("Hasil Prediksi")
         st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
-    
-    # Siapkan data untuk plot
-    df_plot = df_preview.copy().reset_index()
-    df_plot.rename(columns={"index": "Date"}, inplace=True)
-    
-    # Tentukan warna untuk highlight out-of-bounds
-    df_plot["color"] = df_plot["water_level"].apply(lambda x: "red" if (x < 19.5 or x > 26.5) else "blue")
-    df_plot["mode"] = df_plot["Date"].apply(lambda x: "markers+lines")  # bisa ganti style
-    
-    # Buat figure
-    fig = go.Figure()
-    
-    # Plot water level
-    fig.add_trace(go.Scatter(
-        x=df_plot["Date"],
-        y=df_plot["water_level"],
-        mode="lines+markers",
-        marker=dict(color=df_plot["color"], size=10),
-        line=dict(color="blue", width=2),
-        name="Water Level"
-    ))
-    
-    # Tambah batas atas/bawah
-    fig.add_hline(y=19.5, line=dict(color="orange", width=2, dash="dash"), annotation_text="Lower Limit", annotation_position="bottom left")
-    fig.add_hline(y=26.5, line=dict(color="orange", width=2, dash="dash"), annotation_text="Upper Limit", annotation_position="top left")
-    
-    fig.update_layout(
-        title="Water Level History + Forecast",
-        xaxis_title="Date",
-        yaxis_title="Water Level (m)",
-        xaxis=dict(tickangle=-45),
-        yaxis=dict(range=[19, 27]),  # sedikit buffer
-        height=500
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
 
