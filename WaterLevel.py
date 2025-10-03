@@ -112,7 +112,7 @@ if st.button("Fetch Data & Predict"):
 
 
         st.subheader("Preview Data Historis")
-        st.dataframe(df_preview.set_properties(**{"text-align": "right"}, subset=numeric_cols))
+        st.dataframe(df_preview.style.set_properties(**{"text-align": "right"}, subset=numeric_cols))
 
         # buat input feature — gunakan safe_get untuk menghindari missing
         inp = {}
@@ -239,7 +239,7 @@ if st.button("Fetch Data & Predict"):
         
         # tampilkan dataframe
         st.subheader("Preview Data (History + Forecast)")
-        st.dataframe(df_preview.set_properties(**{"text-align": "right"}, subset=numeric_cols))
+        st.dataframe(df_preview.style.set_properties(**{"text-align": "right"}, subset=numeric_cols))
     
         # Ambil hasil prediksi terakhir
         last_date, last_val = list(results.items())[-1]
