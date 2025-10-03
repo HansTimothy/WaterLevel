@@ -284,6 +284,7 @@ if st.button("Fetch Data & Predict"):
         y=df_pred["water_level"],
         mode="lines",
         line=dict(color="black", width=2, dash="dash"),
+        showlegend=False,
     ))
     
     # Plot prediksi aman (loadable)
