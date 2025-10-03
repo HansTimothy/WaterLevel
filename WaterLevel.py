@@ -102,10 +102,9 @@ if st.button("Fetch Data & Predict"):
         # Setelah loop prediksi selesai dan water_level sudah diisi
         df_preview = df.copy()
         
-        # --- letakkan di sini ---
         if "water_level" in df_preview.columns:
             wl = df_preview.pop("water_level")
-            df_preview.insert(1, "water_level", wl)
+            df_preview.insert(0, "water_level", wl)
         
         # List kolom numeric untuk formatting
         numeric_cols = ["precipitation_sum", "temperature_mean", "relative_humidity", "water_level"]
@@ -185,7 +184,7 @@ if st.button("Fetch Data & Predict"):
         # Isi dari input manual (H0..H-6)
         for i, d in enumerate(wl_dates):
             if d in df.index:
-                df.loc[d, "water_level"] = f"{float(wl_inputs[i]):.2f}"
+                df.loc[d, "water_level"] = round(float(wl_inputs[i]), 2)
     
         # Siapkan lags untuk water level (H0 terbaru -> index 0)
         water_level_lags = wl_inputs[:]  # [H0, H-1, H-2, ..., H-6]
@@ -223,10 +222,18 @@ if st.button("Fetch Data & Predict"):
             # update df (biar preview langsung terlihat)
             if pred_day in df.index:
                 df.loc[pred_day, "water_level"] = round(prediction, 2)
+
+        df_preview = df.copy()
         
-        # tampilkan dataframe
+        if "water_level" in df_preview.columns:
+            wl = df_preview.pop("water_level")
+            df_preview.insert(0, "water_level", wl)
+        
+        # List kolom numeric untuk formatting
+        numeric_cols = ["precipitation_sum", "temperature_mean", "relative_humidity", "water_level"]
+        
         st.subheader("Preview Data (History + Forecast)")
-        st.dataframe(df.style.set_properties(**{"text-align": "right"}))
+        st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
     
         # Ambil hasil prediksi terakhir
         last_date, last_val = list(results.items())[-1]
