@@ -208,4 +208,40 @@ if st.button("Fetch Data & Predict"):
         
             # lags water level
             for i in range(1, 8):
-                inp[f"Water_level_lag{i}d"] = [water_level_lags]()
+                inp[f"Water_level_lag{i}d"] = [water_level_lags[i-1]]
+        
+            # buat dataframe input
+            input_data = pd.DataFrame(inp)[features].fillna(0.0)
+        
+            # prediksi
+            prediction = model.predict(input_data)[0]
+            results[pred_day] = prediction
+        
+            # update lags
+            water_level_lags = [prediction] + water_level_lags[:-1]
+        
+            # update df (biar preview langsung terlihat)
+            if pred_day in df.index:
+                df.loc[pred_day, "water_level"] = round(prediction, 2)
+                forecast_dates.append(pred_day)
+        
+        # --- letakkan water_level di kolom kedua ---
+        df_preview = df.copy()
+        if "water_level" in df_preview.columns:
+            wl = df_preview.pop("water_level")
+            df_preview.insert(0, "water_level", wl)  # kolom pertama
+        
+        # styling untuk highlight forecast
+        def highlight_forecast(row):
+            return ['background-color: yellow' if row.name in forecast_dates else '' for _ in row]
+        
+        numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
+        
+        st.subheader("Preview Data (History + Forecast)")
+        st.dataframe(df_preview.style.apply(highlight_forecast, axis=1).format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
+        
+        # Ambil hasil prediksi terakhir
+        last_date, last_val = list(results.items())[-1]
+        st.subheader("Hasil Prediksi")
+        st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
+
