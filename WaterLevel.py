@@ -315,7 +315,7 @@ if st.button("Fetch Data & Predict"):
             x=today_point["Date"],
             y=today_point["water_level"],
             mode="markers",
-            marker=dict(color="blue", size=10, symbol="circle"),
+            marker=dict(color="blue", size=8, symbol="circle"),
             name="Today",
             showlegend=True
         ))
