@@ -130,6 +130,7 @@ if st.button("Fetch Data & Predict"):
         input_data = pd.DataFrame(inp)[features].fillna(0.0)
 
         prediction = model.predict(input_data)[0]
+        df.loc[pred_date, "water_level"] = round(prediction, 2)
         st.success(f"Predicted Water Level on {pred_date.strftime('%d %B %Y')}: {prediction:.2f} m")
 
     else:
