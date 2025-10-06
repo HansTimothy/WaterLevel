@@ -260,7 +260,7 @@ if st.button("Fetch Data & Predict"):
     
     # Pisahkan histori dan prediksi
     df_hist = df_plot[df_plot["Date"] <= today]
-    df_pred = df_plot[df_plot["Date"] > today]
+    df_pred = df_plot[df_plot["Date"] >= today]
     
     # Prediksi aman dan tidak aman
     df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
@@ -306,6 +306,18 @@ if st.button("Fetch Data & Predict"):
         line=dict(color="black", width=2, dash="dash"),
         marker=dict(color="red", size=8),
         name="Prediction (Unloadable)"
+    ))
+
+    # Titik untuk hari ini (today) — tetap berwarna biru seperti histori
+today_point = df_plot[df_plot["Date"] == today]
+if not today_point.empty:
+    fig.add_trace(go.Scatter(
+        x=today_point["Date"],
+        y=today_point["water_level"],
+        mode="markers",
+        marker=dict(color="blue", size=10, symbol="circle"),
+        name="Today",
+        showlegend=True
     ))
     
     # Batas loadable
