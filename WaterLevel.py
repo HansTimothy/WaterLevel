@@ -309,16 +309,16 @@ if st.button("Fetch Data & Predict"):
     ))
 
     # Titik untuk hari ini (today) — tetap berwarna biru seperti histori
-today_point = df_plot[df_plot["Date"] == today]
-if not today_point.empty:
-    fig.add_trace(go.Scatter(
-        x=today_point["Date"],
-        y=today_point["water_level"],
-        mode="markers",
-        marker=dict(color="blue", size=10, symbol="circle"),
-        name="Today",
-        showlegend=True
-    ))
+    today_point = df_plot[df_plot["Date"] == today]
+    if not today_point.empty:
+        fig.add_trace(go.Scatter(
+            x=today_point["Date"],
+            y=today_point["water_level"],
+            mode="markers",
+            marker=dict(color="blue", size=10, symbol="circle"),
+            name="Today",
+            showlegend=True
+        ))
     
     # Batas loadable
     fig.add_hline(y=lower_limit, line=dict(color="red", width=2, dash="dash"),
