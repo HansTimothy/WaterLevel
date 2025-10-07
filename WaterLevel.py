@@ -146,7 +146,7 @@ if st.button("Fetch Data & Predict 14 Hari ke Depan"):
         forecast_dates.append(pred_day)
 
     # Pastikan kolom Date benar dan dalam format date
-    df_preview["Date"] = pd.to_datetime(df_preview["Date"], errors="coerce").dt.date
+    df_preview["time"] = pd.to_datetime(df_preview["Date"], errors="coerce").dt.date
     
     # Kolom numerik yang mau diformat
     numeric_cols = df_preview.select_dtypes(include=["float64", "int64"]).columns
