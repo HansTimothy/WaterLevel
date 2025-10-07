@@ -250,124 +250,133 @@ if st.button("Fetch Data & Predict"):
         st.subheader("Hasil Prediksi")
         st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
 
-    # Ambil kolom yang diperlukan
-    df_plot = df.reset_index()[["time", "water_level"]].copy()
-    df_plot.rename(columns={"time": "Date"}, inplace=True)
+        # -----------------------------
+        # PLOT SECTION (Fix historical prediction visualization)
+        # -----------------------------
+        df_plot = df.reset_index()[["time", "water_level"]].copy()
+        df_plot.rename(columns={"time": "Date"}, inplace=True)
     
-    # Tentukan warna: merah jika non-sailable, biru jika normal
-    lower_limit = 19.5
-    upper_limit = 26.5
-    today = datetime.today().date()
+        lower_limit = 19.5
+        upper_limit = 26.5
+        today = datetime.today().date()
     
-    # Pisahkan histori dan prediksi
-    df_hist = df_plot[df_plot["Date"] <= today]
-    df_pred = df_plot[df_plot["Date"] >= today]
+        # --- Tentukan rentang histori dan prediksi ---
+        if pred_date <= today + timedelta(days=1):
+            # prediksi historis (termasuk H+1)
+            df_hist = df_plot[df_plot["Date"] < pred_date]
+            df_pred = df_plot[df_plot["Date"] >= pred_date]
+        else:
+            # prediksi masa depan
+            df_hist = df_plot[df_plot["Date"] <= today]
+            df_pred = df_plot[df_plot["Date"] > today]
     
-    # Prediksi aman dan tidak aman
-    df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
-    df_pred_unsafe = df_pred[(df_pred["water_level"] < lower_limit) | (df_pred["water_level"] > upper_limit)]
+        # --- Pisahkan prediksi aman/tidak aman ---
+        df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
+        df_pred_unsafe = df_pred[(df_pred["water_level"] < lower_limit) | (df_pred["water_level"] > upper_limit)]
     
-    # Buat figure
-    fig = go.Figure()
+        # --- Plot setup ---
+        fig = go.Figure()
     
-    # Plot histori
-    fig.add_trace(go.Scatter(
-        x=df_hist["Date"],
-        y=df_hist["water_level"],
-        mode="lines+markers",
-        line=dict(color="blue", width=2),
-        marker=dict(color="blue", size=8),
-        name="Historical"
-    ))
-
-    # Plot prediksi
-    fig.add_trace(go.Scatter(
-        x=df_pred["Date"],
-        y=df_pred["water_level"],
-        mode="lines",
-        line=dict(color="black", width=2, dash="dash"),
-        showlegend=False,
-    ))
-    
-    # Plot prediksi aman (loadable)
-    fig.add_trace(go.Scatter(
-        x=df_pred_safe["Date"],
-        y=df_pred_safe["water_level"],
-        mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),
-        marker=dict(color="green", size=8),
-        name="Prediction (Loadable)"
-    ))
-    
-    # Plot prediksi tidak aman (unloadable)
-    fig.add_trace(go.Scatter(
-        x=df_pred_unsafe["Date"],
-        y=df_pred_unsafe["water_level"],
-        mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),
-        marker=dict(color="red", size=8),
-        name="Prediction (Unloadable)"
-    ))
-
-    # Titik untuk hari ini (today) — tetap berwarna biru seperti histori
-    today_point = df_plot[df_plot["Date"] == today]
-    if not today_point.empty:
+        # Historical line
         fig.add_trace(go.Scatter(
-            x=today_point["Date"],
-            y=today_point["water_level"],
-            mode="markers",
-            marker=dict(color="blue", size=8, symbol="circle"),
-            name="Today",
-            showlegend=False
+            x=df_hist["Date"],
+            y=df_hist["water_level"],
+            mode="lines+markers",
+            line=dict(color="blue", width=2),
+            marker=dict(color="blue", size=8),
+            name="Historical"
         ))
     
-    # Batas loadable
-    fig.add_hline(y=lower_limit, line=dict(color="red", width=2, dash="dash"),
-                  annotation_text="Lower Limit", annotation_position="bottom left")
-    fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
-                  annotation_text="Upper Limit", annotation_position="top left")
-
-    # --- Tambahkan area ±RMSE di sekitar prediksi ---
-    rmse = 0.87
-    
-    if not df_pred.empty:
-        upper_band = df_pred["water_level"] + rmse
-        lower_band = df_pred["water_level"] - rmse
-    
-        # Batas bawah
+        # Dashed base line for predictions (for visual continuity)
         fig.add_trace(go.Scatter(
             x=df_pred["Date"],
-            y=lower_band,
+            y=df_pred["water_level"],
             mode="lines",
-            line=dict(width=0),
-            name="-RMSE",
-            showlegend=False
+            line=dict(color="black", width=2, dash="dash"),
+            showlegend=False,
         ))
     
-        # Area fill (antara batas bawah dan atas)
+        # Prediction (Loadable)
         fig.add_trace(go.Scatter(
-            x=df_pred["Date"],
-            y=upper_band,
-            mode="lines",
-            line=dict(color="rgba(0,0,0,0)", dash="dash"),
-            fill="tonexty",
-            fillcolor="rgba(0, 0, 255, 0.1)",  # abu-abu transparan
-            name="Prediction error ±0.87 m",
-            showlegend=True
+            x=df_pred_safe["Date"],
+            y=df_pred_safe["water_level"],
+            mode="lines+markers",
+            line=dict(color="black", width=2, dash="dash"),
+            marker=dict(color="green", size=8),
+            name="Prediction (Loadable)"
         ))
     
-    # Ambil semua tanggal yang mau ditampilkan
-    all_dates = df_plot["Date"]
+        # Prediction (Unloadable)
+        fig.add_trace(go.Scatter(
+            x=df_pred_unsafe["Date"],
+            y=df_pred_unsafe["water_level"],
+            mode="lines+markers",
+            line=dict(color="black", width=2, dash="dash"),
+            marker=dict(color="red", size=8),
+            name="Prediction (Unloadable)"
+        ))
     
-    # Buat tick text dalam format dd/mm/yy
-    tick_text = [d.strftime("%d/%m/%y") for d in all_dates]
+        # Titik untuk hari ini (jika ada)
+        today_point = df_plot[df_plot["Date"] == today]
+        if not today_point.empty:
+            fig.add_trace(go.Scatter(
+                x=today_point["Date"],
+                y=today_point["water_level"],
+                mode="markers",
+                marker=dict(color="blue", size=8, symbol="circle"),
+                name="Today",
+                showlegend=False
+            ))
     
-    fig.update_layout(
-        title="Water Level Dashboard 🌊",
-        xaxis_title="Date",
-        yaxis_title="Water Level (m)", xaxis=dict(tickangle=90, tickmode="array", tickvals=all_dates, ticktext=tick_text),
-        yaxis=dict(autorange=True),
-        height=500
-    )
+        # --- Tambahkan batas loadable ---
+        fig.add_hline(y=lower_limit, line=dict(color="red", width=2, dash="dash"),
+                      annotation_text="Lower Limit", annotation_position="bottom left")
+        fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
+                      annotation_text="Upper Limit", annotation_position="top left")
     
-    st.plotly_chart(fig, use_container_width=True)
+        # --- Tambahkan area ±RMSE di sekitar prediksi ---
+        rmse = 0.87
+        if not df_pred.empty:
+            upper_band = df_pred["water_level"] + rmse
+            lower_band = df_pred["water_level"] - rmse
+    
+            # Batas bawah
+            fig.add_trace(go.Scatter(
+                x=df_pred["Date"],
+                y=lower_band,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False
+            ))
+    
+            # Area fill (antara batas bawah dan atas)
+            fig.add_trace(go.Scatter(
+                x=df_pred["Date"],
+                y=upper_band,
+                mode="lines",
+                line=dict(color="rgba(0,0,0,0)", dash="dash"),
+                fill="tonexty",
+                fillcolor="rgba(0, 0, 255, 0.1)",
+                name="Prediction error ±0.87 m",
+                showlegend=True
+            ))
+    
+        # --- Format tanggal & layout ---
+        all_dates = df_plot["Date"]
+        tick_text = [d.strftime("%d/%m/%y") for d in all_dates]
+    
+        fig.update_layout(
+            title="Water Level Dashboard 🌊",
+            xaxis_title="Date",
+            yaxis_title="Water Level (m)",
+            xaxis=dict(
+                tickangle=90,
+                tickmode="array",
+                tickvals=all_dates,
+                ticktext=tick_text
+            ),
+            yaxis=dict(autorange=True),
+            height=500
+        )
+    
+        st.plotly_chart(fig, use_container_width=True)
