@@ -283,7 +283,8 @@ if st.button("Fetch Data & Predict"):
         y=df_hist["water_level"],
         mode="markers",
         marker=dict(color="blue", size=8),
-        showlegend=True
+        showlegend=True,
+        name="Historical"
     ))
     
     # --- Dashed continuity line: konekkan titik historis terakhir -> titik prediksi pertama ---
