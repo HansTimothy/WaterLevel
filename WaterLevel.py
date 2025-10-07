@@ -56,9 +56,9 @@ wl_inputs = [
 # -----------------------------
 # Helper untuk ambil value dari df dengan fallback
 # -----------------------------
-def safe_get(df, date, col):
+def safe_get(df, date_key, col):
     try:
-        return float(df.loc[date, col])
+        return float(df.loc[date_key, col])
     except Exception:
         return 0.0
 
@@ -91,7 +91,7 @@ if st.button("Fetch Data & Predict"):
         df["time"] = pd.to_datetime(df["time"]).dt.date
         df.set_index("time", inplace=True)
 
-        # Tambah kolom water level manual
+        # Tambah kolom water level manual (dari input wl_inputs)
         for i, d in enumerate(wl_dates):
             if d in df.index:
                 df.loc[d, "water_level"] = round(float(wl_inputs[i]), 2)
@@ -102,11 +102,10 @@ if st.button("Fetch Data & Predict"):
             df_preview.insert(0, "water_level", wl)
         
         numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
-        
         st.subheader("Preview Data Historis")
         st.dataframe(df_preview.style.format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
 
-        # buat input feature
+        # buat input feature untuk pred_date
         inp = {}
         for i in range(1, 8):
             date_i = pred_date - timedelta(days=i)
@@ -118,6 +117,7 @@ if st.button("Fetch Data & Predict"):
             date_i = pred_date - timedelta(days=i)
             inp[f"Relative_humidity_lag{i}d"] = [safe_get(df, date_i, "relative_humidity")]
         for i in range(1, 8):
+            # wl_inputs[0] == pred_date-1, wl_inputs[6] == pred_date-7
             inp[f"Water_level_lag{i}d"] = [wl_inputs[i-1]]
 
         input_data = pd.DataFrame(inp)[features].fillna(0.0)
@@ -147,7 +147,7 @@ if st.button("Fetch Data & Predict"):
         })
         df_hist["time"] = pd.to_datetime(df_hist["time"]).dt.date
         
-        n_days = (pred_date - today).days  
+        n_days = (pred_date - today).days  # misal H+2 -> n_days=2
         
         url_forecast = (
             f"https://api.open-meteo.com/v1/forecast?"
@@ -162,24 +162,31 @@ if st.button("Fetch Data & Predict"):
             "temperature_mean": forecast["daily"]["temperature_2m_mean"],
             "relative_humidity": forecast["daily"]["relative_humidity_2m_mean"]
         })
+        # ambil H+1 .. H+n_days
         df_forecast = df_forecast.iloc[1:n_days+1]
         df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
         
+        # gabungkan histori + forecast
         df = pd.concat([df_hist, df_forecast]).drop_duplicates().sort_values("time")
         df.set_index("time", inplace=True)
         df["water_level"] = None
         
+        # Isi dari input manual (H0..H-6)
         for i, d in enumerate(wl_dates):
             if d in df.index:
                 df.loc[d, "water_level"] = round(float(wl_inputs[i]), 2)
         
-        water_level_lags = wl_inputs[:]  
+        # Siapkan lags untuk water level (H0 terbaru -> index 0)
+        water_level_lags = wl_inputs[:]  # [H0, H-1, H-2, ..., H-6]
+        
         results = {}
-        forecast_dates = []  
+        forecast_dates = []  # untuk highlight
         
         for step in range(1, n_days + 1):
             pred_day = today + timedelta(days=step)
+        
             inp = {}
+            # lags cuaca
             for i in range(1, 8):
                 date_i = pred_day - timedelta(days=i)
                 inp[f"Precipitation_lag{i}d"] = [safe_get(df, date_i, "precipitation_sum")]
@@ -189,39 +196,54 @@ if st.button("Fetch Data & Predict"):
             for i in range(1, 8):
                 date_i = pred_day - timedelta(days=i)
                 inp[f"Relative_humidity_lag{i}d"] = [safe_get(df, date_i, "relative_humidity")]
+        
+            # lags water level
             for i in range(1, 8):
                 inp[f"Water_level_lag{i}d"] = [water_level_lags[i-1]]
         
+            # buat dataframe input dan prediksi
             input_data = pd.DataFrame(inp)[features].fillna(0.0)
             prediction = model.predict(input_data)[0]
             results[pred_day] = prediction
+        
+            # update lags
             water_level_lags = [prediction] + water_level_lags[:-1]
+        
+            # update df (biar preview langsung terlihat)
             if pred_day in df.index:
                 df.loc[pred_day, "water_level"] = round(prediction, 2)
                 forecast_dates.append(pred_day)
         
+        # --- letakkan water_level di kolom pertama untuk preview ---
         df_preview = df.copy()
         if "water_level" in df_preview.columns:
             wl = df_preview.pop("water_level")
             df_preview.insert(0, "water_level", wl)
         
         df_preview = df_preview.iloc[:-1]
+        
+        # styling untuk highlight forecast
         def highlight_forecast(row):
             return ['background-color: #bce4f6' if row.name in forecast_dates else '' for _ in row]
         
         numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
+        
         st.subheader("Preview Data (History + Forecast)")
         st.dataframe(df_preview.style.apply(highlight_forecast, axis=1).format("{:.2f}", subset=numeric_cols).set_properties(**{"text-align": "right"}, subset=numeric_cols))
         
+        # Ambil hasil prediksi terakhir
         last_date, last_val = list(results.items())[-1]
         st.subheader("Hasil Prediksi")
         st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
 
     # -----------------------------
-    # PLOT SECTION (fixed for all scenarios)
+    # PLOT SECTION (fixed for dashed continuity + RMSE band)
     # -----------------------------
     df_plot = df.reset_index()[["time", "water_level"]].copy()
     df_plot.rename(columns={"time": "Date"}, inplace=True)
+
+    # ensure numeric water_level
+    df_plot["water_level"] = pd.to_numeric(df_plot["water_level"], errors="coerce")
 
     lower_limit = 19.5
     upper_limit = 26.5
@@ -229,12 +251,18 @@ if st.button("Fetch Data & Predict"):
 
     # --- Tentukan rentang histori & prediksi ---
     if pred_date <= today + timedelta(days=1):
+        # prediksi historis (pred_date termasuk ke df_pred)
         df_hist = df_plot[df_plot["Date"] < pred_date]
         df_pred = df_plot[df_plot["Date"] >= pred_date]
+        # continuity start = pred_date - 1
+        continuity_start = pred_date - timedelta(days=1)
     else:
+        # prediksi masa depan: histori sampai today, prediksi mulai hari setelah today
         df_hist = df_plot[df_plot["Date"] <= today]
         df_pred = df_plot[df_plot["Date"] > today]
+        continuity_start = today
 
+    # split prediksi aman / tidak aman (ignore NaN)
     df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
     df_pred_unsafe = df_pred[(df_pred["water_level"] < lower_limit) | (df_pred["water_level"] > upper_limit)]
 
@@ -250,16 +278,39 @@ if st.button("Fetch Data & Predict"):
         name="Historical"
     ))
 
-    # Dashed prediction base
-    fig.add_trace(go.Scatter(
-        x=df_pred["Date"],
-        y=df_pred["water_level"],
-        mode="lines",
-        line=dict(color="black", width=2, dash="dash"),
-        showlegend=False,
-    ))
+    # --- Dashed continuity line: konekkan titik historis terakhir -> titik prediksi pertama ---
+    # cari nilai historis di continuity_start (jika ada)
+    last_hist_val = None
+    last_hist_row = df_plot[df_plot["Date"] == continuity_start]
+    if not last_hist_row.empty and pd.notna(last_hist_row["water_level"].iloc[0]):
+        last_hist_val = float(last_hist_row["water_level"].iloc[0])
 
-    # Loadable predictions
+    # ambil hanya prediksi yang memiliki nilai numeric
+    df_pred_nonnull = df_pred.dropna(subset=["water_level"]).copy()
+    pred_dates_numeric = df_pred_nonnull["Date"].tolist()
+    pred_values_numeric = df_pred_nonnull["water_level"].tolist()
+
+    # prepare dashed line coordinates
+    dashed_x = []
+    dashed_y = []
+    if last_hist_val is not None and len(pred_dates_numeric) >= 1:
+        dashed_x = [continuity_start] + pred_dates_numeric
+        dashed_y = [last_hist_val] + pred_values_numeric
+    elif len(pred_dates_numeric) >= 2:
+        dashed_x = pred_dates_numeric
+        dashed_y = pred_values_numeric
+    # add dashed line if enough points
+    if len(dashed_x) >= 2:
+        fig.add_trace(go.Scatter(
+            x=dashed_x,
+            y=dashed_y,
+            mode="lines",
+            line=dict(color="black", width=2, dash="dash"),
+            showlegend=False,
+            hoverinfo="skip"
+        ))
+
+    # Plot prediksi (Loadable & Unloadable) di atas dashed line
     fig.add_trace(go.Scatter(
         x=df_pred_safe["Date"],
         y=df_pred_safe["water_level"],
@@ -268,8 +319,6 @@ if st.button("Fetch Data & Predict"):
         marker=dict(color="green", size=8),
         name="Prediction (Loadable)"
     ))
-
-    # Unloadable predictions
     fig.add_trace(go.Scatter(
         x=df_pred_unsafe["Date"],
         y=df_pred_unsafe["water_level"],
@@ -279,9 +328,9 @@ if st.button("Fetch Data & Predict"):
         name="Prediction (Unloadable)"
     ))
 
-    # Today marker
+    # Today marker (jika ada)
     today_point = df_plot[df_plot["Date"] == today]
-    if not today_point.empty:
+    if not today_point.empty and pd.notna(today_point["water_level"].iloc[0]):
         fig.add_trace(go.Scatter(
             x=today_point["Date"],
             y=today_point["water_level"],
@@ -297,30 +346,43 @@ if st.button("Fetch Data & Predict"):
     fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
                   annotation_text="Upper Limit", annotation_position="top left")
 
-    # ±RMSE area
+    # --- RMSE area: gunakan continuity_start sebagai titik awal (jika ada), fallback ke pred-only if >=2 points ---
     rmse = 0.87
-    if not df_pred.empty:
-        upper_band = df_pred["water_level"] + rmse
-        lower_band = df_pred["water_level"] - rmse
+    band_added = False
+    if last_hist_val is not None and len(pred_dates_numeric) >= 1:
+        band_x = [continuity_start] + pred_dates_numeric
+        upper_band = [last_hist_val + rmse] + [v + rmse for v in pred_values_numeric]
+        lower_band = [last_hist_val - rmse] + [v - rmse for v in pred_values_numeric]
+        band_added = True
+    elif len(pred_values_numeric) >= 2:
+        band_x = pred_dates_numeric
+        upper_band = [v + rmse for v in pred_values_numeric]
+        lower_band = [v - rmse for v in pred_values_numeric]
+        band_added = True
 
+    if band_added:
+        # lower band trace (invisible line, used as baseline for fill)
         fig.add_trace(go.Scatter(
-            x=df_pred["Date"],
+            x=band_x,
             y=lower_band,
             mode="lines",
             line=dict(width=0),
-            showlegend=False
+            showlegend=False,
+            hoverinfo="skip"
         ))
+        # upper band with fill to previous trace (tonexty)
         fig.add_trace(go.Scatter(
-            x=df_pred["Date"],
+            x=band_x,
             y=upper_band,
             mode="lines",
             line=dict(color="rgba(0,0,0,0)", dash="dash"),
             fill="tonexty",
-            fillcolor="rgba(0, 0, 255, 0.1)",
-            name="Prediction error ±0.87 m",
+            fillcolor="rgba(0, 0, 255, 0.12)",
+            name=f"Prediction error ±{rmse:.2f} m",
             showlegend=True
         ))
 
+    # Format tanggal tick
     all_dates = df_plot["Date"]
     tick_text = [d.strftime("%d/%m/%y") for d in all_dates]
 
