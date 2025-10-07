@@ -314,16 +314,14 @@ if st.button("Fetch Data & Predict"):
     fig.add_trace(go.Scatter(
         x=df_pred_safe["Date"],
         y=df_pred_safe["water_level"],
-        mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),
+        mode="markers",
         marker=dict(color="green", size=8),
         name="Prediction (Loadable)"
     ))
     fig.add_trace(go.Scatter(
         x=df_pred_unsafe["Date"],
         y=df_pred_unsafe["water_level"],
-        mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),
+        mode="markers",
         marker=dict(color="red", size=8),
         name="Prediction (Unloadable)"
     ))
