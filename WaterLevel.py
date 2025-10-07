@@ -20,6 +20,7 @@ st.subheader("Pilih Tanggal Prediksi Water Level (Max: H+14)")
 pred_date = st.date_input(
     "Tanggal Prediksi Water Level",
     value=today + timedelta(days=1),
+    min_value=date(2018, 5, 8),
     max_value=today + timedelta(days=14)
 )
 
