@@ -326,23 +326,32 @@ if st.button("Fetch Data & Predict"):
     fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
                   annotation_text="Upper Limit", annotation_position="top left")
 
-    #rentang error prediksi
+    # --- Tambahkan area ±RMSE di sekitar prediksi ---
     rmse = 0.87
+    
     if not df_pred.empty:
+        upper_band = df_pred["water_level"] + rmse
+        lower_band = df_pred["water_level"] - rmse
+    
+        # Batas bawah
         fig.add_trace(go.Scatter(
             x=df_pred["Date"],
-            y=df_pred["water_level"] + rmse,
+            y=lower_band,
             mode="lines",
-            line=dict(color="gray", width=1, dash="dot"),
-            name="+RMSE (±0.87m)",
-            showlegend=True
+            line=dict(width=0),
+            name="-RMSE",
+            showlegend=False
         ))
+    
+        # Area fill (antara batas bawah dan atas)
         fig.add_trace(go.Scatter(
             x=df_pred["Date"],
-            y=df_pred["water_level"] - rmse,
+            y=upper_band,
             mode="lines",
-            line=dict(color="gray", width=1, dash="dot"),
-            name="-RMSE (±0.87m)",
+            line=dict(color="rgba(0,0,0,0)", dash="dash"),
+            fill="tonexty",
+            fillcolor="rgba(128, 128, 128, 0.2)",  # abu-abu transparan
+            name="Prediction ±0.87m (RMSE band)",
             showlegend=True
         ))
     
