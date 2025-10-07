@@ -236,168 +236,129 @@ if st.button("Fetch Data & Predict"):
         st.subheader("Hasil Prediksi")
         st.success(f"Predicted Water Level on {last_date.strftime('%d %B %Y')}: {last_val:.2f} m")
 
-    # -----------------------------
-    # PLOT SECTION (fixed for dashed continuity + RMSE band)
-    # -----------------------------
-    df_plot = df.reset_index()[["time", "water_level"]].copy()
-    df_plot.rename(columns={"time": "Date"}, inplace=True)
-
-    # ensure numeric water_level
-    df_plot["water_level"] = pd.to_numeric(df_plot["water_level"], errors="coerce")
-
-    lower_limit = 19.5
-    upper_limit = 26.5
-    today = datetime.today().date()
-
-    # --- Tentukan rentang histori & prediksi ---
-    if pred_date <= today + timedelta(days=1):
-        # prediksi historis (pred_date termasuk ke df_pred)
-        df_hist = df_plot[df_plot["Date"] < pred_date]
-        df_pred = df_plot[df_plot["Date"] >= pred_date]
-        # continuity start = pred_date - 1
-        continuity_start = pred_date - timedelta(days=1)
-    else:
-        # prediksi masa depan: histori sampai today, prediksi mulai hari setelah today
-        df_hist = df_plot[df_plot["Date"] <= today]
-        df_pred = df_plot[df_plot["Date"] > today]
-        continuity_start = today
-
-    # split prediksi aman / tidak aman (ignore NaN)
-    df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
-    df_pred_unsafe = df_pred[(df_pred["water_level"] < lower_limit) | (df_pred["water_level"] > upper_limit)]
-
-    fig = go.Figure()
-
-    # Historical line
-    fig.add_trace(go.Scatter(
-        x=df_hist["Date"],
-        y=df_hist["water_level"],
-        mode="lines+markers",
-        line=dict(color="blue", width=2),
-        marker=dict(color="blue", size=8),
-        name="Historical"
-    ))
-
-    # --- Dashed continuity line: konekkan titik historis terakhir -> titik prediksi pertama ---
-    # cari nilai historis di continuity_start (jika ada)
-    last_hist_val = None
-    last_hist_row = df_plot[df_plot["Date"] == continuity_start]
-    if not last_hist_row.empty and pd.notna(last_hist_row["water_level"].iloc[0]):
-        last_hist_val = float(last_hist_row["water_level"].iloc[0])
-
-    # ambil hanya prediksi yang memiliki nilai numeric
-    df_pred_nonnull = df_pred.dropna(subset=["water_level"]).copy()
-    pred_dates_numeric = df_pred_nonnull["Date"].tolist()
-    pred_values_numeric = df_pred_nonnull["water_level"].tolist()
-
-    # prepare dashed line coordinates
-    dashed_x = []
-    dashed_y = []
-    if last_hist_val is not None and len(pred_dates_numeric) >= 1:
-        dashed_x = [continuity_start] + pred_dates_numeric
-        dashed_y = [last_hist_val] + pred_values_numeric
-    elif len(pred_dates_numeric) >= 2:
-        dashed_x = pred_dates_numeric
-        dashed_y = pred_values_numeric
-    # add dashed line if enough points
-    if len(dashed_x) >= 2:
+        # -----------------------------
+        # PLOT SECTION (final fixed for dashed continuity + RMSE band)
+        # -----------------------------
+        df_plot = df.reset_index()[["time", "water_level"]].copy()
+        df_plot.rename(columns={"time": "Date"}, inplace=True)
+        df_plot["water_level"] = pd.to_numeric(df_plot["water_level"], errors="coerce")
+    
+        lower_limit = 19.5
+        upper_limit = 26.5
+        today = datetime.today().date()
+    
+        # Tentukan rentang histori & prediksi
+        if pred_date <= today + timedelta(days=1):
+            df_hist = df_plot[df_plot["Date"] < pred_date]
+            df_pred = df_plot[df_plot["Date"] >= pred_date]
+            continuity_start = pred_date - timedelta(days=1)
+        else:
+            df_hist = df_plot[df_plot["Date"] <= today]
+            df_pred = df_plot[df_plot["Date"] > today]
+            continuity_start = today
+    
+        # Split prediksi aman/tidak aman
+        df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
+        df_pred_unsafe = df_pred[(df_pred["water_level"] < lower_limit) | (df_pred["water_level"] > upper_limit)]
+    
+        # --- Figure start ---
+        fig = go.Figure()
+    
+        # 1️⃣ Garis historis
         fig.add_trace(go.Scatter(
-            x=dashed_x,
-            y=dashed_y,
-            mode="lines",
+            x=df_hist["Date"],
+            y=df_hist["water_level"],
+            mode="lines+markers",
+            line=dict(color="blue", width=2),
+            marker=dict(color="blue", size=7),
+            name="Historical"
+        ))
+    
+        # 2️⃣ Garis dashed penghubung (historis → prediksi)
+        last_hist_val = df_plot.loc[df_plot["Date"] == continuity_start, "water_level"]
+        first_pred_val = df_pred["water_level"].dropna()
+        if not last_hist_val.empty and len(first_pred_val) > 0:
+            fig.add_trace(go.Scatter(
+                x=[continuity_start, df_pred["Date"].iloc[0]],
+                y=[last_hist_val.values[0], first_pred_val.iloc[0]],
+                mode="lines",
+                line=dict(color="black", width=2, dash="dash"),
+                showlegend=False
+            ))
+    
+        # 3️⃣ Garis prediksi — satu garis saja (tanpa overlap antar safe/unsafe)
+        fig.add_trace(go.Scatter(
+            x=df_pred["Date"],
+            y=df_pred["water_level"],
+            mode="lines+markers",
             line=dict(color="black", width=2, dash="dash"),
-            showlegend=False,
-            hoverinfo="skip"
+            marker=dict(size=8, color=[
+                "green" if lower_limit <= v <= upper_limit else "red"
+                for v in df_pred["water_level"]
+            ]),
+            name="Prediction"
         ))
-
-    # Plot prediksi (Loadable & Unloadable) di atas dashed line
-    fig.add_trace(go.Scatter(
-        x=df_pred_safe["Date"],
-        y=df_pred_safe["water_level"],
-        mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),
-        marker=dict(color="green", size=8),
-        name="Prediction (Loadable)"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df_pred_unsafe["Date"],
-        y=df_pred_unsafe["water_level"],
-        mode="lines+markers",
-        line=dict(color="black", width=2, dash="dash"),
-        marker=dict(color="red", size=8),
-        name="Prediction (Unloadable)"
-    ))
-
-    # Today marker (jika ada)
-    today_point = df_plot[df_plot["Date"] == today]
-    if not today_point.empty and pd.notna(today_point["water_level"].iloc[0]):
-        fig.add_trace(go.Scatter(
-            x=today_point["Date"],
-            y=today_point["water_level"],
-            mode="markers",
-            marker=dict(color="blue", size=8, symbol="circle"),
-            name="Today",
-            showlegend=False
-        ))
-
-    # Loadable limits
-    fig.add_hline(y=lower_limit, line=dict(color="red", width=2, dash="dash"),
-                  annotation_text="Lower Limit", annotation_position="bottom left")
-    fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
-                  annotation_text="Upper Limit", annotation_position="top left")
-
-    # --- RMSE area: gunakan continuity_start sebagai titik awal (jika ada), fallback ke pred-only if >=2 points ---
-    rmse = 0.87
-    band_added = False
-    if last_hist_val is not None and len(pred_dates_numeric) >= 1:
-        band_x = [continuity_start] + pred_dates_numeric
-        upper_band = [last_hist_val + rmse] + [v + rmse for v in pred_values_numeric]
-        lower_band = [last_hist_val - rmse] + [v - rmse for v in pred_values_numeric]
-        band_added = True
-    elif len(pred_values_numeric) >= 2:
-        band_x = pred_dates_numeric
-        upper_band = [v + rmse for v in pred_values_numeric]
-        lower_band = [v - rmse for v in pred_values_numeric]
-        band_added = True
-
-    if band_added:
-        # lower band trace (invisible line, used as baseline for fill)
-        fig.add_trace(go.Scatter(
-            x=band_x,
-            y=lower_band,
-            mode="lines",
-            line=dict(width=0),
-            showlegend=False,
-            hoverinfo="skip"
-        ))
-        # upper band with fill to previous trace (tonexty)
-        fig.add_trace(go.Scatter(
-            x=band_x,
-            y=upper_band,
-            mode="lines",
-            line=dict(color="rgba(0,0,0,0)", dash="dash"),
-            fill="tonexty",
-            fillcolor="rgba(0, 0, 255, 0.12)",
-            name=f"Prediction error ±{rmse:.2f} m",
-            showlegend=True
-        ))
-
-    # Format tanggal tick
-    all_dates = df_plot["Date"]
-    tick_text = [d.strftime("%d/%m/%y") for d in all_dates]
-
-    fig.update_layout(
-        title="Water Level Dashboard 🌊",
-        xaxis_title="Date",
-        yaxis_title="Water Level (m)",
-        xaxis=dict(
-            tickangle=90,
-            tickmode="array",
-            tickvals=all_dates,
-            ticktext=tick_text
-        ),
-        yaxis=dict(autorange=True),
-        height=500
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+    
+        # 4️⃣ Area RMSE band (bisa tampil bahkan hanya 1 titik)
+        rmse = 0.87
+        if len(df_pred) >= 1:
+            if not last_hist_val.empty:
+                band_x = [continuity_start] + df_pred["Date"].tolist()
+                base_val = float(last_hist_val.values[0])
+                base_y = [base_val] + df_pred["water_level"].tolist()
+            else:
+                band_x = df_pred["Date"].tolist()
+                base_y = df_pred["water_level"].tolist()
+    
+            upper_band = [y + rmse for y in base_y]
+            lower_band = [y - rmse for y in base_y]
+    
+            fig.add_trace(go.Scatter(
+                x=band_x + band_x[::-1],
+                y=upper_band + lower_band[::-1],
+                fill="toself",
+                fillcolor="rgba(0, 0, 255, 0.12)",
+                line=dict(color="rgba(0,0,0,0)"),
+                hoverinfo="skip",
+                showlegend=True,
+                name=f"Prediction error ±{rmse:.2f} m"
+            ))
+    
+        # 5️⃣ Batas loadable/unloadable
+        fig.add_hline(y=lower_limit, line=dict(color="red", width=2, dash="dash"),
+                      annotation_text="Lower Limit", annotation_position="bottom left")
+        fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
+                      annotation_text="Upper Limit", annotation_position="top left")
+    
+        # 6️⃣ Today marker
+        if today in df_plot["Date"].values:
+            val = df_plot.loc[df_plot["Date"] == today, "water_level"].values[0]
+            if pd.notna(val):
+                fig.add_trace(go.Scatter(
+                    x=[today],
+                    y=[val],
+                    mode="markers",
+                    marker=dict(color="blue", size=10, symbol="circle"),
+                    name="Today"
+                ))
+    
+        # 7️⃣ Axis & layout formatting
+        all_dates = df_plot["Date"]
+        tick_text = [d.strftime("%d/%m/%y") for d in all_dates]
+        fig.update_layout(
+            title="Water Level Prediction Dashboard 🌊",
+            xaxis_title="Date",
+            yaxis_title="Water Level (m)",
+            xaxis=dict(
+                tickangle=90,
+                tickmode="array",
+                tickvals=all_dates,
+                ticktext=tick_text
+            ),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            yaxis=dict(autorange=True),
+            height=520,
+            template="plotly_white"
+        )
+    
+        st.plotly_chart(fig, use_container_width=True)
