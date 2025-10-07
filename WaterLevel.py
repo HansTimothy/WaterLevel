@@ -317,7 +317,7 @@ if st.button("Fetch Data & Predict"):
             mode="markers",
             marker=dict(color="blue", size=8, symbol="circle"),
             name="Today",
-            showlegend=True
+            showlegend=False
         ))
     
     # Batas loadable
