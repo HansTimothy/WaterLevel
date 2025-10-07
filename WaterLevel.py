@@ -272,11 +272,23 @@ if st.button("Fetch Data & Predict"):
     fig.add_trace(go.Scatter(
         x=df_hist["Date"],
         y=df_hist["water_level"],
-        mode="lines+markers",
+        mode="lines",  # hanya garis, tanpa legend
         line=dict(color="blue", width=2),
-        marker=dict(color="blue", size=8),
-        name="Historical"
+        showlegend=False,  # ✅ tidak muncul di legend
+        hoverinfo="skip"
     ))
+
+# Tambahkan marker kecil khusus untuk legend "Historical"
+if not df_hist.empty:
+    fig.add_trace(go.Scatter(
+        x=[df_hist["Date"].iloc[-1]],  # ambil 1 titik (biar legend muncul)
+        y=[df_hist["water_level"].iloc[-1]],
+        mode="markers",
+        marker=dict(color="blue", size=8),
+        name="Historical",  # ✅ ini yang muncul di legend
+        hoverinfo="skip"
+    ))
+
 
     # --- Dashed continuity line: konekkan titik historis terakhir -> titik prediksi pertama ---
     # cari nilai historis di continuity_start (jika ada)
