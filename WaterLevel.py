@@ -350,8 +350,8 @@ if st.button("Fetch Data & Predict"):
             mode="lines",
             line=dict(color="rgba(0,0,0,0)", dash="dash"),
             fill="tonexty",
-            fillcolor="rgba(128, 128, 128, 0.2)",  # abu-abu transparan
-            name="Prediction ±0.87m (RMSE band)",
+            fillcolor="rgba(0, 0, 255, 0.2)",  # abu-abu transparan
+            name="Prediction error ±0.87m",
             showlegend=True
         ))
     
