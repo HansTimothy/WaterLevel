@@ -305,7 +305,7 @@ if st.button("Fetch Data & Predict"):
             x=dashed_x,
             y=dashed_y,
             mode="lines",
-            line=dict(color="black", width=0, dash="dash"),
+            line=dict(color="black", width=2, dash="dash"),
             showlegend=False,
             hoverinfo="skip"
         ))
