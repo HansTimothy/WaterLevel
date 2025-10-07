@@ -229,11 +229,11 @@ if st.button("Fetch Data & Predict"):
 
     # --- Tentukan rentang histori & prediksi ---
     if pred_date <= today + timedelta(days=1):
-        df_hist = df_plot[df_plot["Date"] < pred_date]
+        df_hist = df_plot[df_plot["Date"] <= pred_date]
         df_pred = df_plot[df_plot["Date"] >= pred_date]
     else:
         df_hist = df_plot[df_plot["Date"] <= today]
-        df_pred = df_plot[df_plot["Date"] > today]
+        df_pred = df_plot[df_plot["Date"] >= today]
 
     df_pred_safe = df_pred[df_pred["water_level"].between(lower_limit, upper_limit)]
     df_pred_unsafe = df_pred[(df_pred["water_level"] < lower_limit) | (df_pred["water_level"] > upper_limit)]
