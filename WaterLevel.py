@@ -326,6 +326,26 @@ if st.button("Fetch Data & Predict"):
     fig.add_hline(y=upper_limit, line=dict(color="red", width=2, dash="dash"),
                   annotation_text="Upper Limit", annotation_position="top left")
 
+    #rentang error prediksi
+    rmse = 0.87
+    if not df_pred.empty:
+        fig.add_trace(go.Scatter(
+            x=df_pred["Date"],
+            y=df_pred["water_level"] + rmse,
+            mode="lines",
+            line=dict(color="gray", width=1, dash="dot"),
+            name="+RMSE (±0.87m)",
+            showlegend=True
+        ))
+        fig.add_trace(go.Scatter(
+            x=df_pred["Date"],
+            y=df_pred["water_level"] - rmse,
+            mode="lines",
+            line=dict(color="gray", width=1, dash="dot"),
+            name="-RMSE (±0.87m)",
+            showlegend=True
+        ))
+    
     # Ambil semua tanggal yang mau ditampilkan
     all_dates = df_plot["Date"]
     
