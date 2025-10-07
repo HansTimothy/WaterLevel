@@ -145,21 +145,31 @@ if st.button("Fetch Data & Predict 14 Hari ke Depan"):
         df.loc[pred_day, "water_level"] = round(prediction, 2)
         forecast_dates.append(pred_day)
 
-    # -----------------------------
-    # Preview Data
-    # -----------------------------
-    df_preview = df.copy()
-    wl = df_preview.pop("water_level")
-    df_preview.insert(0, "water_level", wl)
-    numeric_cols = ["precipitation_sum", "temperature_mean", "water_level"]
-
+    # Pastikan kolom Date benar dan dalam format date
+    df_preview["Date"] = pd.to_datetime(df_preview["Date"], errors="coerce").dt.date
+    
+    # Kolom numerik yang mau diformat
+    numeric_cols = df_preview.select_dtypes(include=["float64", "int64"]).columns
+    
+    # Fungsi highlight area forecast (prediksi)
     def highlight_forecast(row):
-        return ['background-color: #bce4f6' if row.name in forecast_dates else '' for _ in row]
-
-    st.subheader("Preview Data (History + Forecast 14 Hari ke Depan)")
-    st.dataframe(df_preview.style.apply(highlight_forecast, axis=1)
-                 .format("{:.2f}", subset=numeric_cols)
-                 .set_properties(**{"text-align": "right"}, subset=numeric_cols))
+        # Jika tanggal melebihi hari ini = data prediksi
+        if row["Date"] > today:
+            # beri warna biru muda transparan
+            return ["background-color: rgba(135, 206, 250, 0.3)"] * len(row)
+        else:
+            # data historis tanpa warna
+            return [""] * len(row)
+    
+    # Tampilkan di Streamlit
+    st.subheader("📊 Data Preview")
+    
+    st.dataframe(
+        df_preview.style
+            .apply(highlight_forecast, axis=1)
+            .format("{:.2f}", subset=numeric_cols)
+            .set_properties(**{"text-align": "right"}, subset=numeric_cols)
+    )
 
     # -----------------------------
     # Plot
