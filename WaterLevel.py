@@ -246,7 +246,7 @@ if st.button("Fetch Data & Predict"):
     df_plot["water_level"] = pd.to_numeric(df_plot["water_level"], errors="coerce")
 
     lower_limit = 19.5
-    upper_limit = 26.5
+    upper_limit = 28.5
     today = datetime.today().date()
 
     # --- Tentukan rentang histori & prediksi ---
