@@ -27,7 +27,7 @@ today = gmt7_now.date()
 # Select forecast start date
 # -----------------------------
 st.subheader("Select Start Date for 7-Day Forecast")
-selected_date = st.date_input("Forecast Start Date", value=today, max_value=today)
+selected_date = st.date_input("Forecast Start Date", value=today, max_value=tomorrow)
 st.write(f"Forecast will start on: {selected_date}")
 
 # -----------------------------
