@@ -189,7 +189,9 @@ if st.session_state.get("forecast_done") and st.session_state.get("final_df") is
         
         # Pilih kolom yang ditampilkan: Water_level + fitur iklim (tanpa lag)
         display_cols = ["Datetime", "Water_level", "Rainfall", "Cloud_cover", "Soil_moisture", "Source"]
-        df_display = final_df[display_cols].copy()
+        # Ambil hanya kolom yang ada di final_df
+        display_cols_existing = [c for c in display_cols if c in final_df.columns]
+        df_display = final_df[display_cols_existing].copy()
         
         def highlight_forecast(row):
             return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
