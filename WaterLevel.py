@@ -185,13 +185,18 @@ result_container = st.empty()
 if st.session_state.get("forecast_done") and st.session_state.get("final_df") is not None:
     final_df = st.session_state["final_df"]
     with result_container.container():
-        st.subheader("Historical + Forecast Water Level")
+        st.subheader("Historical + Forecast Water Level + Climate Data")
+        
+        # Pilih kolom yang ditampilkan: Water_level + fitur iklim (tanpa lag)
+        display_cols = ["Datetime", "Water_level", "Rainfall", "Cloud_cover", "Soil_moisture", "Source"]
+        df_display = final_df[display_cols].copy()
+        
         def highlight_forecast(row):
             return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
 
-        numeric_cols = final_df.select_dtypes(include=[np.number]).columns.tolist()
-        styled_df = final_df.style.apply(highlight_forecast, axis=1)\
-                                   .format({col: "{:.2f}" for col in numeric_cols})
+        numeric_cols = df_display.select_dtypes(include=[np.number]).columns.tolist()
+        styled_df = df_display.style.apply(highlight_forecast, axis=1)\
+                                     .format({col: "{:.2f}" for col in numeric_cols})
         st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
