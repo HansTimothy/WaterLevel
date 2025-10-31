@@ -5,3 +5,8 @@ scikit-learn
 xgboost
 joblib
 plotly
+pytz
+XlsxWriter
+openpyxl
+reportlab
+scipy
