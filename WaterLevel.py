@@ -1,170 +1,189 @@
+# ============================================
+# WaterLevel_JettyTuhup_App.py
+# ============================================
 import streamlit as st
 import pandas as pd
-import numpy as np
 import requests
-import pickle
-from datetime import datetime, timedelta
-from sklearn.preprocessing import StandardScaler
+import joblib
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
-# ===============================
-# 🎯 Judul Aplikasi
-# ===============================
-st.title("🌊 Water Level Forecast Jetty Tuhup")
+# -----------------------------
+# Load trained model
+# -----------------------------
+model = joblib.load("best_model.pkl")
 
-# ===============================
-# 📂 Upload CSV Data Historis
-# ===============================
-uploaded_file = st.file_uploader("📥 Upload file AWLR Log Jetty Tuhup", type=["csv"])
+st.title("Water Level Prediction — Jetty Tuhup 🌊")
 
-if uploaded_file is None:
-    st.warning("Silakan upload file CSV historis terlebih dahulu.")
-    st.stop()
+today = datetime.today().date()
 
-# Baca file CSV
-df_hist = pd.read_csv(uploaded_file)
-df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"])
-df_hist = df_hist.sort_values("Datetime").reset_index(drop=True)
-df_hist.rename(columns={"Level Air": "Water_level"}, inplace=True)
-
-# ===============================
-# ⚙️ Load Model
-# ===============================
-with open("best_model.pkl", "rb") as file:
-    model = pickle.load(file)
-
-# ===============================
-# 📅 Input Parameter
-# ===============================
-today = pd.Timestamp(datetime.now().date())
-start_date = df_hist["Datetime"].min()
-end_date = df_hist["Datetime"].max()
-
-selected_date = st.date_input(
-    "📅 Pilih tanggal mulai prediksi (maksimum hari ini):",
-    value=min(today, end_date),
-    min_value=start_date.date(),
-    max_value=today.date()
-)
-selected_date = pd.Timestamp(selected_date)
-
-st.info(f"🔍 Prediksi akan dimulai dari {selected_date.date()} dan berjalan 14 hari ke depan.")
-
-# ===============================
-# 🔗 Ambil Data Iklim Otomatis (Open-Meteo)
-# ===============================
-st.info("🔄 Mengambil data iklim otomatis dari Open-Meteo API...")
-
-latitude, longitude = -0.1177, 114.1002  # Contoh koordinat Sungai Joloi
-
-start_fetch = (selected_date - timedelta(days=7)).strftime("%Y-%m-%d")
-end_fetch = (selected_date + timedelta(days=14)).strftime("%Y-%m-%d")
-
-url = (
-    f"https://archive-api.open-meteo.com/v1/archive?"
-    f"latitude={latitude}&longitude={longitude}"
-    f"&start_date={start_fetch}&end_date={end_fetch}"
-    f"&daily=precipitation_sum,temperature_2m_max,temperature_2m_min"
-    f"&timezone=Asia/Singapore"
+st.subheader("Pilih Tanggal Prediksi (maksimal hari ini)")
+pred_date = st.date_input(
+    "Tanggal Prediksi Water Level",
+    value=today,
+    max_value=today
 )
 
-r = requests.get(url)
-if r.status_code != 200:
-    st.error("Gagal mengambil data iklim dari API.")
-    st.stop()
+st.caption("📤 Upload data AWLR Jetty Tuhup (2 kolom: Datetime | Level Air, minimal 7 hari terakhir)")
 
-data = r.json()
-climate_df = pd.DataFrame({
-    "Datetime": data["daily"]["time"],
-    "Rainfall": data["daily"]["precipitation_sum"],
-    "Temp_max": data["daily"]["temperature_2m_max"],
-    "Temp_min": data["daily"]["temperature_2m_min"]
-})
-climate_df["Datetime"] = pd.to_datetime(climate_df["Datetime"])
+uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
 
-# ===============================
-# 🧮 Siapkan Data untuk Model
-# ===============================
-full_df = pd.merge(climate_df, df_hist, on="Datetime", how="left")
-full_df["Water_level"] = full_df["Water_level"].interpolate()
+# ------------------------------------------
+# Fungsi bantu
+# ------------------------------------------
+def safe_get(df, date, col):
+    try:
+        return float(df.loc[date, col])
+    except Exception:
+        return 0.0
 
-# Filter hanya data >= selected_date - 7 hari
-full_df = full_df[full_df["Datetime"] >= (selected_date - timedelta(days=7))].reset_index(drop=True)
-
-# ===============================
-# 🔁 Autoregresi Forecasting (14 hari)
-# ===============================
-lags = 7
-forecast_horizon = 14
-
-# Buat lag awal
-for i in range(1, lags + 1):
-    full_df[f"WL_Lag{i}"] = full_df["Water_level"].shift(i)
-
-full_df = full_df.sort_values("Datetime").reset_index(drop=True)
-
-# Ambil data terakhir sebelum prediksi
-last_known = full_df.dropna().iloc[-1]
-history_values = [last_known[f"WL_Lag{i}"] for i in range(1, lags + 1)][::-1]
-
-forecast_rows = []
-dates_future = [selected_date + timedelta(days=i) for i in range(1, forecast_horizon + 1)]
-
-for d in dates_future:
-    if d not in climate_df["Datetime"].values:
-        continue
-
-    climate_today = climate_df[climate_df["Datetime"] == d][["Rainfall", "Temp_max", "Temp_min"]].values[0]
-    features = np.concatenate((np.array(history_values[-lags:]), climate_today)).reshape(1, -1)
-    pred = model.predict(features)[0]
-    history_values.append(pred)
-
-    forecast_rows.append({
-        "Datetime": d,
-        "Predicted_Water_Level": pred
+def fetch_meteo_data(start_date, end_date):
+    """Ambil data Open-Meteo (historis)"""
+    url = (
+        f"https://archive-api.open-meteo.com/v1/archive?"
+        f"latitude=-0.61&longitude=114.8"
+        f"&start_date={start_date}&end_date={end_date}"
+        f"&daily=temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean"
+        f"&timezone=Asia%2FSingapore"
+    )
+    data = requests.get(url).json()
+    df = pd.DataFrame({
+        "time": data["daily"]["time"],
+        "precipitation_sum": data["daily"]["precipitation_sum"],
+        "temperature_mean": data["daily"]["temperature_2m_mean"],
+        "relative_humidity": data["daily"]["relative_humidity_2m_mean"]
     })
+    df["time"] = pd.to_datetime(df["time"]).dt.date
+    df.set_index("time", inplace=True)
+    return df
 
-forecast_df = pd.DataFrame(forecast_rows)
+def fetch_forecast_data(days_ahead):
+    """Ambil data forecast hingga n hari ke depan"""
+    url_forecast = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude=-0.61&longitude=114.8"
+        f"&daily=temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean"
+        f"&timezone=Asia%2FSingapore&forecast_days=16"
+    )
+    forecast = requests.get(url_forecast).json()
+    df_forecast = pd.DataFrame({
+        "time": forecast["daily"]["time"],
+        "precipitation_sum": forecast["daily"]["precipitation_sum"],
+        "temperature_mean": forecast["daily"]["temperature_2m_mean"],
+        "relative_humidity": forecast["daily"]["relative_humidity_2m_mean"]
+    })
+    df_forecast["time"] = pd.to_datetime(df_forecast["time"]).dt.date
+    df_forecast = df_forecast.iloc[1:days_ahead+1]
+    df_forecast.set_index("time", inplace=True)
+    return df_forecast
 
-# ===============================
-# 📊 Gabungkan Hasil
-# ===============================
-combined_df = pd.concat([
-    full_df[["Datetime", "Water_level"]],
-    forecast_df.rename(columns={"Predicted_Water_Level": "Water_level"})
-])
-combined_df["Source"] = np.where(combined_df["Datetime"] < forecast_df["Datetime"].min(), "Historical", "Forecast")
 
-# ===============================
-# 📈 Visualisasi
-# ===============================
-fig = go.Figure()
+# ------------------------------------------
+# Jalankan prediksi
+# ------------------------------------------
+if uploaded_file is not None:
+    try:
+        df_awlr = pd.read_csv(uploaded_file)
+        df_awlr["Datetime"] = pd.to_datetime(df_awlr["Datetime"])
+        df_awlr["Date"] = df_awlr["Datetime"].dt.date
+        df_awlr = df_awlr.groupby("Date", as_index=False)["Level Air"].mean()
+        df_awlr = df_awlr.set_index("Date").sort_index()
 
-hist_df = combined_df[combined_df["Source"] == "Historical"]
-fore_df = combined_df[combined_df["Source"] == "Forecast"]
+        st.write("### Preview Data Water Level")
+        st.dataframe(df_awlr.tail(7))
 
-fig.add_trace(go.Scatter(
-    x=hist_df["Datetime"], y=hist_df["Water_level"],
-    name="Water Level (Historis)", line=dict(color="blue")
-))
-fig.add_trace(go.Scatter(
-    x=fore_df["Datetime"], y=fore_df["Water_level"],
-    name="Water Level (Forecast 14 Hari)", line=dict(color="orange", dash="dot")
-))
-fig.add_vline(x=selected_date, line_width=2, line_dash="dash", line_color="red")
+        # ambil 7 hari terakhir sebelum tanggal prediksi
+        last_7 = df_awlr[df_awlr.index < pred_date].tail(7)
+        if len(last_7) < 7:
+            st.warning("⚠️ Data tidak mencukupi. Pastikan file mencakup minimal 7 hari sebelum tanggal prediksi.")
+        else:
+            st.success("✅ Data valid. Siap prediksi.")
+            if st.button("Predict Water Level"):
+                features = [
+                    "Precipitation_lag1d","Precipitation_lag2d","Precipitation_lag3d",
+                    "Precipitation_lag4d","Precipitation_lag5d","Precipitation_lag6d","Precipitation_lag7d",
+                    "Temperature_lag1d","Temperature_lag2d","Temperature_lag3d","Temperature_lag4d",
+                    "Relative_humidity_lag1d","Relative_humidity_lag2d","Relative_humidity_lag3d",
+                    "Relative_humidity_lag4d","Relative_humidity_lag5d","Relative_humidity_lag6d",
+                    "Relative_humidity_lag7d",
+                    "Water_level_lag1d","Water_level_lag2d","Water_level_lag3d","Water_level_lag4d",
+                    "Water_level_lag5d","Water_level_lag6d","Water_level_lag7d",
+                ]
 
-fig.update_layout(
-    title="Prediksi Level Air Sungai (14 Hari ke Depan)",
-    xaxis_title="Tanggal", yaxis_title="Level Air (m)",
-    template="plotly_white"
-)
+                # ambil data historis 7 hari sebelum tanggal prediksi
+                start_hist = (pred_date - timedelta(days=7)).isoformat()
+                end_hist = (pred_date - timedelta(days=1)).isoformat()
+                df_hist = fetch_meteo_data(start_hist, end_hist)
 
-st.plotly_chart(fig, use_container_width=True)
+                # gabungkan dengan level air
+                df_hist["water_level"] = None
+                for d, v in last_7["Level Air"].items():
+                    if d in df_hist.index:
+                        df_hist.loc[d, "water_level"] = round(v, 2)
 
-# ===============================
-# 💾 Unduh Hasil
-# ===============================
-csv = combined_df.to_csv(index=False).encode("utf-8")
-st.download_button("💾 Unduh Hasil Prediksi (CSV)", csv, "water_level_forecast.csv", "text/csv")
+                df_hist = df_hist.fillna(0)
 
-st.success(f"✅ Prediksi selesai! Dimulai dari {selected_date.date()} hingga {selected_date.date() + timedelta(days=14)}.")
+                # cek apakah user minta tanggal lampau
+                if pred_date < today:
+                    # prediksi gabungan historis + forecast validasi
+                    n_future = (today - pred_date).days
+                    df_future = fetch_forecast_data(n_future)
+                    df = pd.concat([df_hist, df_future]).drop_duplicates().sort_index()
+                else:
+                    df = df_hist.copy()
+
+                # autoregresi 7 hari ke depan
+                results = {}
+                wl_lags = list(last_7["Level Air"].iloc[::-1])[:7]  # 7 hari ke belakang
+                wl_lags = wl_lags[::-1]  # urut dari lama ke baru
+
+                for step in range(1, 8):
+                    pred_day = pred_date + timedelta(days=step)
+                    inp = {}
+                    for i in range(1, 8):
+                        date_i = pred_day - timedelta(days=i)
+                        inp[f"Precipitation_lag{i}d"] = [safe_get(df, date_i, "precipitation_sum")]
+                    for i in range(1, 5):
+                        date_i = pred_day - timedelta(days=i)
+                        inp[f"Temperature_lag{i}d"] = [safe_get(df, date_i, "temperature_mean")]
+                    for i in range(1, 8):
+                        date_i = pred_day - timedelta(days=i)
+                        inp[f"Relative_humidity_lag{i}d"] = [safe_get(df, date_i, "relative_humidity")]
+                    for i in range(1, 8):
+                        inp[f"Water_level_lag{i}d"] = [wl_lags[-i]]
+
+                    input_df = pd.DataFrame(inp)[features].fillna(0)
+                    pred = model.predict(input_df)[0]
+                    results[pred_day] = pred
+                    wl_lags.append(pred)
+                    wl_lags = wl_lags[-7:]
+
+                st.success("✅ Prediksi selesai!")
+                result_df = pd.DataFrame({
+                    "Date": list(results.keys()),
+                    "Predicted Water Level (m)": list(results.values())
+                })
+                st.dataframe(result_df.style.format("{:.2f}"))
+
+                # Visualisasi
+                df_plot_hist = df_awlr.reset_index()[["Date", "Level Air"]]
+                df_plot_pred = result_df.rename(columns={"Predicted Water Level (m)": "Level Air"})
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=df_plot_hist["Date"], y=df_plot_hist["Level Air"],
+                    mode="lines+markers", name="Historical", line=dict(color="blue")
+                ))
+                fig.add_trace(go.Scatter(
+                    x=df_plot_pred["Date"], y=df_plot_pred["Level Air"],
+                    mode="lines+markers", name="Forecast", line=dict(color="green", dash="dash")
+                ))
+                fig.update_layout(
+                    title="Water Level Forecast — Jetty Tuhup",
+                    xaxis_title="Date", yaxis_title="Water Level (m)",
+                    height=500
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Error membaca file: {e}")
