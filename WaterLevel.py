@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
-model = joblib.load("xgb_waterlevel_daily_model.pkl")
+model = joblib.load("best_model.pkl")
 st.title("🌊 Water Level Forecast Dashboard - Jetty Tuhup")
 
 # -----------------------------
