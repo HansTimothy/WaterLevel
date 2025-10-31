@@ -21,14 +21,13 @@ st.title("🌊 Water Level Forecast Dashboard - Jetty Tuhup")
 # -----------------------------
 now_utc = datetime.utcnow()
 gmt7_now = now_utc + timedelta(hours=7)
-today = gmt7_now.date()
 tomorrow = gmt7_now.date() + timedelta(days=1)
 
 # -----------------------------
 # Select forecast start date
 # -----------------------------
 st.subheader("Select Start Date for 7-Day Forecast")
-selected_date = st.date_input("Forecast Start Date", value=today, max_value=tomorrow)
+selected_date = st.date_input("Forecast Start Date", value=tomorrow, max_value=tomorrow)
 st.write(f"Forecast will start on: {selected_date}")
 
 # -----------------------------
