@@ -62,7 +62,7 @@ if uploaded_file is not None:
         
         # Pastikan kolom ada
         if "Datetime" not in df_raw.columns or "Water_level" not in df_raw.columns:
-            st.error("The file must contain columns 'Datetime' and 'Water_level'.")
+            st.error("The file must contain columns 'Datetime' and 'Level Air'.")
         else:
             # -----------------------
             # 1️⃣ Baca & bersihkan data
