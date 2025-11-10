@@ -340,40 +340,47 @@ if upload_success and st.session_state["forecast_running"]:
 
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
-    model_features = model.get_booster().feature_names
+    # Ambil index jam forecast
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
-
+    
+    # Simpan nama fitur XGB
+    model_features = model.get_booster().feature_names
+    
     for i, idx in enumerate(forecast_indices, start=1):
         progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
+        
         X_forecast = pd.DataFrame(columns=model_features, index=[0])
-    
+        
         for f in model_features:
             if "_Lag" in f:
                 base, lag_str = f.rsplit("_Lag", 1)
-                try:
-                    lag = int(lag_str)
-                except:
-                    lag = 1
+                lag = int(lag_str)
             else:
                 base = f
                 lag = 0
     
             if base in final_df.columns:
+                # Shift berdasarkan lag dari data gabungan historical + forecast sebelumnya
                 lagged_series = final_df[base].shift(lag)
                 val = lagged_series.loc[idx]
+                # Jika NaN, pakai last historical value
                 if pd.isna(val):
                     hist_vals = final_df.loc[final_df["Source"]=="Historical", base]
                     val = hist_vals.iloc[-1] if not hist_vals.empty else 0
                 X_forecast.at[0, f] = val
             else:
                 X_forecast.at[0, f] = 0
-    
+        
         X_forecast = X_forecast.astype(float)
         y_hat = model.predict(X_forecast)[0]
+        
+        # Masukkan hasil prediksi ke dataframe
         final_df.at[idx, "Water_level"] = max(round(y_hat,2), 0)
-    
+        
+        # Sekarang lag untuk jam berikutnya otomatis akan mengambil prediksi ini
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
+
 
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
