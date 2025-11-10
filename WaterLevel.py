@@ -166,154 +166,262 @@ multi_points = {
     }
 }
 
-variables = ["relative_humidity_2m","precipitation","cloud_cover","surface_pressure"]
+# -----------------------------
+# Multi-point coordinates + bobot IDW
+# -----------------------------
+multi_points = {
+    "T_": { "NW": {"lat":0.38664,"lon":113.78421,"weight":0.000639},
+            "N": {"lat":0.38664,"lon":114.83972,"weight":0.001287},
+            "NE":{"lat":0.38664,"lon":115.89523,"weight":0.000591},
+            "W": {"lat":-0.59754,"lon":113.76960,"weight":0.001233},
+            "Center":{"lat":-0.59754,"lon":114.82759,"weight":0.992519},
+            "E": {"lat":-0.59754,"lon":115.81505,"weight":0.001271},
+            "SW":{"lat":-1.65202,"lon":113.76685,"weight":0.000615},
+            "S": {"lat":-1.65202,"lon":114.76606,"weight":0.001232},
+            "SE":{"lat":-1.65202,"lon":115.83664,"weight":0.000613} },
+    "SL_": { "NW": {"lat":0.52724,"lon":113.68050,"weight":0.000329},
+             "N": {"lat":0.52724,"lon":114.73766,"weight":0.000679},
+             "NE":{"lat":0.52724,"lon":115.65387,"weight":0.000347},
+             "W": {"lat":-0.45694,"lon":113.73240,"weight":0.000708},
+             "Center":{"lat":-0.45694,"lon":114.71832,"weight":0.995940},
+             "E": {"lat":-0.45694,"lon":115.70423,"weight":0.000639},
+             "SW":{"lat":-1.44112,"lon":113.71044,"weight":0.000337},
+             "S": {"lat":-1.44112,"lon":114.70727,"weight":0.000669},
+             "SE":{"lat":-1.44112,"lon":115.63291,"weight":0.000352} },
+    "MB_": { "NW": {"lat":0.38664,"lon":113.64348,"weight":0.000166},
+             "N": {"lat":0.38664,"lon":114.55825,"weight":0.000332},
+             "NE":{"lat":0.38664,"lon":115.61377,"weight":0.000168},
+             "W": {"lat":-0.59754,"lon":113.62853,"weight":0.000320},
+             "Center":{"lat":-0.59754,"lon":114.61599,"weight":0.997992},
+             "E": {"lat":-0.59754,"lon":115.60345,"weight":0.000345},
+             "SW":{"lat":-1.58172,"lon":113.60538,"weight":0.000160},
+             "S": {"lat":-1.58172,"lon":114.60380,"weight":0.000334},
+             "SE":{"lat":-1.58172,"lon":115.53090,"weight":0.000183} },
+    "MU_": { "NW": {"lat":0.31634,"lon":113.48438,"weight":0.000587},
+             "N": {"lat":0.31634,"lon":114.53906,"weight":0.001197},
+             "NE":{"lat":0.31634,"lon":115.52344,"weight":0.000613},
+             "W": {"lat":-0.73814,"lon":113.52433,"weight":0.001244},
+             "Center":{"lat":-0.73814,"lon":114.51334,"weight":0.992616},
+             "E": {"lat":-0.73814,"lon":115.50235,"weight":0.001309},
+             "SW":{"lat":-1.72232,"lon":113.50001,"weight":0.000598},
+             "S": {"lat":-1.72232,"lon":114.50001,"weight":0.001206},
+             "SE":{"lat":-1.72232,"lon":115.50001,"weight":0.000630} },
+}
 
-def fetch_multi_point_weather(start_dt, end_dt, variables, forecast=False):
-    all_points_dfs = []
-    for prefix, point_info in multi_points.items():
-        coords = point_info["coords"]
-        weights = point_info["weights"]
+# Variabel cuaca historical/forecast
+variable_mapping_hist = {"precipitation":"Rainfall", "cloud_cover":"Cloud_cover", "soil_moisture_0_to_7cm":"Soil_moisture"}
+variable_mapping_fore = {"precipitation":"Rainfall", "cloud_cover":"Cloud_cover", "soil_moisture_0_1cm":"Soil_moisture"}
 
-        latitudes = ",".join(str(v[0]) for v in coords.values())
-        longitudes = ",".join(str(v[1]) for v in coords.values())
+# -----------------------------
+# Fungsi fetch historical multi-point
+# -----------------------------
+def fetch_historical_multi_point(start_dt, end_dt, variable_mapping=variable_mapping_hist):
+    all_points_list = []
 
-        if forecast:
-            url = (
-                f"https://api.open-meteo.com/v1/forecast?"
-                f"latitude={latitudes}&longitude={longitudes}"
-                f"&hourly={','.join(variables)}&forecast_days=16&timezone=Asia%2FBangkok"
-            )
-        else:
-            url = (
-                f"https://archive-api.open-meteo.com/v1/archive?"
-                f"latitude={latitudes}&longitude={longitudes}"
-                f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-                f"&hourly={','.join(variables)}&timezone=Asia%2FBangkok"
-            )
-
+    for point_name, directions_dict in multi_points.items():
+        directions = list(directions_dict.keys())
+        latitudes = ",".join(str(directions_dict[dir]["lat"]) for dir in directions)
+        longitudes = ",".join(str(directions_dict[dir]["lon"]) for dir in directions)
+        
+        url = (
+            f"https://archive-api.open-meteo.com/v1/archive?"
+            f"latitude={latitudes}&longitude={longitudes}"
+            f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
+            f"&hourly={','.join(variable_mapping.keys())}&timezone=Asia%2FBangkok"
+        )
         try:
             data = requests.get(url, timeout=60).json()
-        except Exception as e:
-            st.error(f"Error fetching data for {prefix}: {e}")
+        except:
+            continue
+        
+        if not isinstance(data, list) or len(data) != len(directions):
             continue
 
-        all_dfs = []
-        for i, direction in enumerate(coords.keys()):
+        df_list = []
+        for i, dir_name in enumerate(directions):
             loc_data = data[i]
             df = pd.DataFrame(loc_data["hourly"])
-            df["direction"] = direction
-            df["weight"] = weights[direction]
-            all_dfs.append(df)
-
-        df_all = pd.concat(all_dfs, ignore_index=True)
+            df["weight"] = directions_dict[dir_name]["weight"]
+            df_list.append(df)
+        df_all = pd.concat(df_list, ignore_index=True)
         df_all["time"] = pd.to_datetime(df_all["time"])
 
         weighted_list = []
         for time, group in df_all.groupby("time"):
-            w = group["weight"]
-            weighted_vals = (group[variables].T * w.values).T.sum()
+            weighted_vals = (group[list(variable_mapping.keys())].T * group["weight"].values).T.sum()
             weighted_vals["Datetime"] = time
             weighted_list.append(weighted_vals)
-
-        df_weighted = pd.DataFrame(weighted_list)
-        df_weighted.rename(columns={var: f"{prefix}{var}" for var in variables}, inplace=True)
-        all_points_dfs.append(df_weighted)
-
-    if len(all_points_dfs) == 0:
-        return pd.DataFrame()
-    
-    from functools import reduce
-    df_merged = reduce(lambda left,right: pd.merge(left,right,on="Datetime",how="outer"), all_points_dfs)
-    return df_merged.sort_values("Datetime")
-
-# -----------------------------
-# 3️⃣ Merge water level + climate
-# -----------------------------
-if upload_success:
-    st.info("Fetching multipoint climate data...")
-
-    climate_df = fetch_multi_point_weather(start_datetime - timedelta(hours=72), start_datetime, variables, forecast=False)
-
-    if climate_df.empty:
-        st.error("Failed fetching climate data.")
-    else:
-        final_df = pd.merge(wl_hourly, climate_df, on="Datetime", how="left")
-
-        # Rename columns final
-        rename_dict = {
-            "T_relative_humidity_2m": "T_Relative_humidity",
-            "T_precipitation": "T_Rainfall",
-            "T_cloud_cover": "T_Cloud_cover",
-            "T_surface_pressure": "T_Surface_pressure",
-            "SL_relative_humidity_2m": "SL_Relative_humidity",
-            "SL_precipitation": "SL_Rainfall",
-            "SL_cloud_cover": "SL_Cloud_cover",
-            "SL_surface_pressure": "SL_Surface_pressure",
-            "MB_relative_humidity_2m": "MB_Relative_humidity",
-            "MB_precipitation": "MB_Rainfall",
-            "MB_cloud_cover": "MB_Cloud_cover",
-            "MB_surface_pressure": "MB_Surface_pressure",
-            "MU_relative_humidity_2m": "MU_Relative_humidity",
-            "MU_precipitation": "MU_Rainfall",
-            "MU_cloud_cover": "MU_Cloud_cover",
-            "MU_surface_pressure": "MU_Surface_pressure"
-        }
-        final_df.rename(columns=rename_dict, inplace=True)
-        final_df = final_df.sort_values("Datetime")
-        final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
         
+        df_weighted = pd.DataFrame(weighted_list)
+        df_weighted.rename(columns=variable_mapping, inplace=True)
+        df_weighted["Datetime"] = pd.to_datetime(df_weighted["Datetime"])
+        all_points_list.append((point_name, df_weighted))
+    
+    final_df = all_points_list[0][1].copy()
+    final_df = final_df.rename(columns={col: f"{all_points_list[0][0]}_{col}" for col in variable_mapping.values()})
+    for point_name, df in all_points_list[1:]:
+        df = df.rename(columns={col: f"{point_name}_{col}" for col in variable_mapping.values()})
+        final_df = pd.merge(final_df, df, on="Datetime", how="outer")
+    return final_df
+
+# -----------------------------
+# Fungsi fetch forecast multi-point
+# -----------------------------
+def fetch_forecast_multi_point(variable_mapping=variable_mapping_fore):
+    all_points_list = []
+
+    for point_name, directions_dict in multi_points.items():
+        directions = list(directions_dict.keys())
+        latitudes = ",".join(str(directions_dict[dir]["lat"]) for dir in directions)
+        longitudes = ",".join(str(directions_dict[dir]["lon"]) for dir in directions)
+        
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={latitudes}&longitude={longitudes}"
+            f"&hourly={','.join(variable_mapping.keys())}&forecast_days=16&timezone=Asia%2FBangkok"
+        )
+        try:
+            data = requests.get(url, timeout=60).json()
+        except:
+            continue
+        
+        if not isinstance(data, list) or len(data) != len(directions):
+            continue
+
+        df_list = []
+        for i, dir_name in enumerate(directions):
+            loc_data = data[i]
+            df = pd.DataFrame(loc_data["hourly"])
+            df["weight"] = directions_dict[dir_name]["weight"]
+            df_list.append(df)
+        df_all = pd.concat(df_list, ignore_index=True)
+        df_all["time"] = pd.to_datetime(df_all["time"])
+
+        weighted_list = []
+        for time, group in df_all.groupby("time"):
+            weighted_vals = (group[list(variable_mapping.keys())].T * group["weight"].values).T.sum()
+            weighted_vals["Datetime"] = time
+            weighted_list.append(weighted_vals)
+        
+        df_weighted = pd.DataFrame(weighted_list)
+        df_weighted.rename(columns=variable_mapping, inplace=True)
+        df_weighted["Datetime"] = pd.to_datetime(df_weighted["Datetime"])
+        all_points_list.append((point_name, df_weighted))
+    
+    final_df = all_points_list[0][1].copy()
+    final_df = final_df.rename(columns={col: f"{all_points_list[0][0]}_{col}" for col in variable_mapping.values()})
+    for point_name, df in all_points_list[1:]:
+        df = df.rename(columns={col: f"{point_name}_{col}" for col in variable_mapping.values()})
+        final_df = pd.merge(final_df, df, on="Datetime", how="outer")
+    return final_df
+
+# -----------------------------
+# Run Forecast Button
+# -----------------------------
+run_forecast = st.button("Run 7-Day Forecast")
+if "forecast_done" not in st.session_state:
+    st.session_state["forecast_done"] = False
+    st.session_state["final_df"] = None
+    st.session_state["forecast_running"] = False
+
+if run_forecast:
+    st.session_state["forecast_done"] = False
+    st.session_state["final_df"] = None
+    st.session_state["forecast_running"] = True
+    st.rerun()
+
+# -----------------------------
+# Forecast Logic
+# -----------------------------
+if upload_success and st.session_state["forecast_running"]:
+    progress_container = st.empty()
+    total_forecast_hours = 168
+    total_steps = 3 + total_forecast_hours
+    step_counter = 0
+    progress_bar = st.progress(0)
+
+    # 1️⃣ Fetch historical climate
+    progress_container.markdown("Fetching historical climate data...")
+    climate_hist = fetch_historical_multi_point(start_datetime - timedelta(hours=72), start_datetime)
+    step_counter += 1
+    progress_bar.progress(step_counter / total_steps)
+
+    # 2️⃣ Fetch forecast climate
+    progress_container.markdown("Fetching forecast climate data...")
+    climate_forecast = fetch_forecast_multi_point()
+    step_counter += 1
+    progress_bar.progress(step_counter / total_steps)
+
+    # 3️⃣ Merge water level + climate
+    progress_container.markdown("Merging water level and climate data...")
+    wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
+    climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
+    climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
+
+    merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
+    merged_hist["Source"] = "Historical"
+
+    forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
+    forecast_df = pd.DataFrame({"Datetime": forecast_hours})
+    forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
+    forecast_merged["Water_level"] = np.nan
+    forecast_merged["Source"] = "Forecast"
+
+    final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
+    final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
+
+    step_counter += 1
+    progress_bar.progress(step_counter / total_steps)
+    
+    # 4️⃣ Iterative forecast
+    progress_container.markdown("Forecasting water level 7 days iteratively...")
+    model_features = model.get_booster().feature_names
+    forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
+
+    for i, idx in enumerate(forecast_indices, start=1):
+        progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
+        X_forecast = pd.DataFrame(columns=model_features, index=[0])
+
+        for f in model_features:
+            if "_Lag" in f:
+                base, lag_str = f.rsplit("_Lag",1)
+                try:
+                    lag = int(lag_str)
+                except:
+                    lag = 1
+            else:
+                base = f
+                lag = 0
+
+            # Ambil nilai lag dari final_df
+            if base in final_df.columns:
+                hist_values = final_df.loc[final_df["Source"]=="Historical", base]
+                # Jika lag lebih besar dari panjang historical, ambil value pertama
+                if idx-lag >= 0:
+                    X_forecast.at[0,f] = final_df.iloc[idx-lag].get(base, 0)
+                else:
+                    X_forecast.at[0,f] = hist_values.iloc[0]
+            else:
+                # fallback jika kolom tidak ada
+                X_forecast.at[0,f] = 0
+
+        # pastikan tipe float
+        X_forecast = X_forecast.astype(float)
+
+        # prediksi
+        y_hat = model.predict(X_forecast)[0]
+        if y_hat < 0: y_hat = 0
+        final_df.at[idx,"Water_level"] = round(y_hat,2)
+
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
-    
-        # 4️⃣ Iterative forecast
-        progress_container.markdown("Forecasting water level 7 days iteratively...")
-        model_features = model.get_booster().feature_names
-        forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
-    
-        for i, idx in enumerate(forecast_indices, start=1):
-            progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
-            X_forecast = pd.DataFrame(columns=model_features, index=[0])
-    
-            for f in model_features:
-                if "_Lag" in f:
-                    base, lag_str = f.rsplit("_Lag",1)
-                    try:
-                        lag = int(lag_str)
-                    except:
-                        lag = 1
-                else:
-                    base = f
-                    lag = 0
-    
-                # Ambil nilai lag dari final_df
-                if base in final_df.columns:
-                    hist_values = final_df.loc[final_df["Source"]=="Historical", base]
-                    # Jika lag lebih besar dari panjang historical, ambil value pertama
-                    if idx-lag >= 0:
-                        X_forecast.at[0,f] = final_df.iloc[idx-lag].get(base, 0)
-                    else:
-                        X_forecast.at[0,f] = hist_values.iloc[0]
-                else:
-                    # fallback jika kolom tidak ada
-                    X_forecast.at[0,f] = 0
-    
-            # pastikan tipe float
-            X_forecast = X_forecast.astype(float)
-    
-            # prediksi
-            y_hat = model.predict(X_forecast)[0]
-            if y_hat < 0: y_hat = 0
-            final_df.at[idx,"Water_level"] = round(y_hat,2)
-    
-            step_counter += 1
-            progress_bar.progress(step_counter / total_steps)
-    
-        st.session_state["final_df"] = final_df
-        st.session_state["forecast_done"] = True
-        st.session_state["forecast_running"] = False
-        progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
-        progress_bar.progress(1.0)
-    
+
+    st.session_state["final_df"] = final_df
+    st.session_state["forecast_done"] = True
+    st.session_state["forecast_running"] = False
+    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
+    progress_bar.progress(1.0)
+
 # -----------------------------
 # Display Forecast & Plot
 # -----------------------------
