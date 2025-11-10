@@ -361,7 +361,6 @@ if run_forecast:
     st.session_state["forecast_done"] = False
     st.session_state["final_df"] = None
     st.session_state["forecast_running"] = True
-    st.experimental_rerun()  # rerun agar state ter-trigger
 
 # -----------------------------
 # Forecast Logic (Safe + Progress Detail)
