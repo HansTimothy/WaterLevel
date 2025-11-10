@@ -70,7 +70,7 @@ if uploaded_file is not None:
             df_raw['Datetime'] = pd.to_datetime(df_raw['Datetime'], errors='coerce')
             df_raw = df_raw.dropna(subset=['Datetime'])
             df_raw = df_raw.sort_values('Datetime').set_index('Datetime')
-            df_raw['Water_level'] = pd.to_numeric(df_raw['Water_level'], errors='coerce')
+            df_raw['Water_level'] = pd.to_numeric(df_raw['Level Air'], errors='coerce')
             
             # -----------------------
             # 2️⃣ Resample menjadi hourly average
