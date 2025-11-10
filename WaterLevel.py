@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
 import joblib
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, time
 from io import BytesIO
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
@@ -13,46 +14,46 @@ import plotly.graph_objects as go
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
-model = joblib.load("best_model.pkl")
-st.title("🌊 Water Level Daily Forecast Dashboard")
+model = joblib.load("xgb_waterlevel_hourly_model.pkl")
+st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
-# Current time (GMT+7), rounded up to next day
+# Current time (GMT+7), rounded up to next full hour
 # -----------------------------
 now_utc = datetime.utcnow()
 gmt7_now = now_utc + timedelta(hours=7)
-max_date = (gmt7_now + timedelta(days=1)).date()  # maksimal besok
+rounded_now = gmt7_now.replace(minute=0, second=0, microsecond=0)
+if gmt7_now.minute > 0 or gmt7_now.second > 0:
+    rounded_now += timedelta(hours=1)
 
 # -----------------------------
 # Select forecast start datetime
 # -----------------------------
-st.subheader("Select Start Date for 14-Day Forecast")
-selected_date = st.date_input(
-    "Forecast Start Date",
-    value=max_date,
-    max_value=max_date,
-    min_value=date(2019,1,1)
-)
-start_datetime = datetime.combine(selected_date, datetime.min.time())
-st.write(f"Forecast start date (GMT+7): {start_datetime.date()}")
+st.subheader("Select Start Date & Time for 7-Day Forecast")
+selected_date = st.date_input("Date", value=rounded_now.date(), max_value=rounded_now.date())
+hour_options = [f"{h:02d}:00" for h in range(0, rounded_now.hour + 1)] if selected_date == rounded_now.date() else [f"{h:02d}:00" for h in range(0, 24)]
+selected_hour_str = st.selectbox("Time (WIB)", hour_options, index=len(hour_options)-1)
+selected_hour = int(selected_hour_str.split(":")[0])
+start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
+st.write(f"Start datetime (GMT+7): {start_datetime}")
 
 # -----------------------------
 # Instructions for upload
 # -----------------------------
-st.subheader("Upload Water Level CSV")
+st.subheader("Instructions for Uploading Water Level Data")
 st.info(
     f"- CSV must contain columns: 'Datetime' and 'Level Air'.\n"
     f"- 'Datetime' format: YYYY-MM-DD HH:MM:SS\n"
-    f"- Data must cover **7 days before start date**: "
-    f"{start_datetime.date() - timedelta(days=7)} to {start_datetime.date() - timedelta(days=1)}\n"
-    f"- Make sure there are no duplicate timestamps."
+    f"- Data must cover **72 hours before the selected start datetime**: "
+    f"{start_datetime - timedelta(hours=72)} to {start_datetime}\n"
+    f"- Make sure there are no missing hours."
 )
 
 # -----------------------------
 # Upload water level data
 # -----------------------------
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
-wl_daily = None
+uploaded_file = st.file_uploader("Upload CSV File (AWLR Joloi Logs)", type=["csv"])
+wl_hourly = None
 upload_success = False
 
 if uploaded_file is not None:
@@ -62,45 +63,188 @@ if uploaded_file is not None:
             st.error("The file must contain columns 'Datetime' and 'Level Air'.")
         else:
             # -----------------------
-            # 1️⃣ Siapkan data harian
+            # 1️⃣ Siapkan data
             # -----------------------
             df_wl["Datetime"] = pd.to_datetime(df_wl["Datetime"])
-            df_wl = df_wl.drop_duplicates(subset="Datetime").sort_values("Datetime").set_index("Datetime")
-            df_wl["Water_level"] = df_wl["Level Air"].clip(lower=0)
+            df_wl = df_wl.sort_values("Datetime").set_index("Datetime")
+            df_wl["Water_level"] = df_wl["Level Air"].clip(lower=0)  # hapus nilai negatif
             
             # -----------------------
-            # 2️⃣ Resample per hari
+            # 2️⃣ Deteksi spike singkat (<120 menit)
             # -----------------------
-            wl_daily = df_wl.resample('D').mean().reset_index()
-            wl_daily['Water_level'] = wl_daily['Water_level'].round(2)
-
+            df_wl['is_up'] = df_wl['Water_level'] > 0
+            df_wl['group'] = (df_wl['is_up'] != df_wl['is_up'].shift()).cumsum()
+            group_durations = df_wl.groupby('group').size() * 3  # durasi menit (3 menit per record)
+            group_durations = group_durations.rename("duration_min")
+            df_wl = df_wl.join(group_durations, on='group')
+            
+            short_spike = (df_wl['is_up']) & (df_wl['duration_min'] < 120)
+            df_wl.loc[short_spike, 'Water_level'] = 0
+            
+            df_wl = df_wl.drop(columns=['is_up', 'group', 'duration_min', 'Level Air'])
+            
             # -----------------------
-            # 3️⃣ Ambil hanya 7 hari terakhir sebelum start
+            # 3️⃣ Interpolasi missing values
             # -----------------------
-            start_limit = start_datetime - pd.Timedelta(days=7)
-            wl_daily = wl_daily[(wl_daily["Datetime"] >= start_limit) & (wl_daily["Datetime"] < start_datetime)]
-            wl_daily = wl_daily.reset_index(drop=True)
-
+            df_wl['Water_level'] = df_wl['Water_level'].interpolate(method='time')
+            
             # -----------------------
-            # 4️⃣ Validasi jumlah hari
+            # 4️⃣ Resample per jam
             # -----------------------
-            expected_dates = pd.date_range(start=start_limit.date(), end=start_datetime.date()-timedelta(days=1), freq='D')
-            actual_dates = pd.to_datetime(wl_daily["Datetime"]).dt.date
-            missing_dates = sorted(set(expected_dates.date) - set(actual_dates))
-            if missing_dates:
-                missing_str = ', '.join([d.strftime("%Y-%m-%d") for d in missing_dates])
-                st.warning(f"The uploaded water level data is incomplete! Missing dates: {missing_str}")
+            wl_hourly = df_wl.resample('H').mean().reset_index()
+            wl_hourly['Water_level'] = wl_hourly['Water_level'].interpolate().round(2)
+            
+            # -----------------------
+            # 5️⃣ Hanya 72 jam terakhir sebelum start_datetime, reset index
+            # -----------------------
+            start_limit = start_datetime - pd.Timedelta(hours=72)
+            wl_hourly = wl_hourly[(wl_hourly["Datetime"] >= start_limit) & (wl_hourly["Datetime"] < start_datetime)]
+            wl_hourly = wl_hourly.drop_duplicates(subset="Datetime").reset_index(drop=True)
+            
+            # -----------------------
+            # 5️⃣ Validasi missing hours (72 jam sebelum start)
+            # -----------------------
+            start_limit = start_datetime - pd.Timedelta(hours=72)
+            end_limit = start_datetime
+            expected_hours = pd.date_range(start=start_limit, end=end_limit - pd.Timedelta(hours=1), freq='H')
+            actual_hours = pd.to_datetime(wl_hourly["Datetime"])
+            missing_hours = sorted(set(expected_hours) - set(actual_hours))
+            if missing_hours:
+                missing_str = ', '.join([dt.strftime("%Y-%m-%d %H:%M") for dt in missing_hours])
+                st.warning(f"The uploaded water level data is incomplete! Missing hours: {missing_str}")
             else:
                 upload_success = True
-                st.success("✅ File uploaded and validated successfully!")
-                st.dataframe(wl_daily)
+                st.success("✅ File uploaded, cleaned, and validated successfully!")
+                st.dataframe(wl_hourly)
     except Exception as e:
         st.error(f"Failed to read file: {e}")
 
 # -----------------------------
+# 1️⃣ Multi-point coordinates + bobot statis
+# -----------------------------
+points = {
+    "NW":     {"lat": 0.38664, "lon": 113.64348, "weight": 0.0177},
+    "N":      {"lat": 0.38664, "lon": 114.13605, "weight": 0.0320},
+    "NE":     {"lat": 0.38664, "lon": 114.55825, "weight": 0.0177},
+    "W":      {"lat": -0.10545, "lon": 113.56976, "weight": 0.0291},
+    "Center": {"lat": -0.10545, "lon": 114.20109, "weight": 0.7932},
+    "E":      {"lat": -0.10545, "lon": 114.55183, "weight": 0.0401},
+    "SW":     {"lat": -0.59754, "lon": 113.62853, "weight": 0.0181},
+    "S":      {"lat": -0.59754, "lon": 114.12226, "weight": 0.0355},
+    "SE":     {"lat": -0.59754, "lon": 114.61599, "weight": 0.0165}
+}
+directions = list(points.keys())
+
+numeric_cols_hist = ["precipitation","cloud_cover","soil_moisture_0_to_7cm"]
+numeric_cols_fore = ["precipitation","cloud_cover","soil_moisture_0_1cm"]
+
+# -----------------------------
+# 2️⃣ Fungsi historical climate
+# -----------------------------
+def fetch_historical_multi(start_dt, end_dt):
+    latitudes = ",".join(str(pt["lat"]) for pt in points.values())
+    longitudes = ",".join(str(pt["lon"]) for pt in points.values())
+    
+    url = (
+        f"https://archive-api.open-meteo.com/v1/archive?"
+        f"latitude={latitudes}&longitude={longitudes}"
+        f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
+        "&hourly=precipitation,cloud_cover,soil_moisture_0_to_7cm"
+        "&timezone=Asia%2FBangkok"
+    )
+
+    try:
+        data = requests.get(url, timeout=60).json()
+    except Exception as e:
+        print("Error fetching historical data:", e)
+        return pd.DataFrame()
+    
+    if not isinstance(data, list) or len(data) != len(points):
+        return pd.DataFrame()
+    
+    all_dfs = []
+    for i, dir_name in enumerate(directions):
+        loc_data = data[i]
+        df = pd.DataFrame(loc_data["hourly"])
+        df["direction"] = dir_name
+        df["weight"] = points[dir_name]["weight"]
+        all_dfs.append(df)
+    
+    df_all = pd.concat(all_dfs, ignore_index=True)
+    df_all["time"] = pd.to_datetime(df_all["time"])
+    
+    # Weighted average per jam
+    weighted_list = []
+    for time, group in df_all.groupby("time"):
+        w = group["weight"]
+        weighted_vals = (group[numeric_cols_hist].T * w.values).T.sum()
+        weighted_vals["Datetime"] = time
+        weighted_list.append(weighted_vals)
+    
+    df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "precipitation":"Rainfall",
+        "cloud_cover":"Cloud_cover",
+        "soil_moisture_0_to_7cm":"Soil_moisture"
+    }, inplace=True)
+    df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
+    return df_weighted[["Datetime","Rainfall","Cloud_cover","Soil_moisture"]]
+
+# -----------------------------
+# 3️⃣ Fungsi forecast climate
+# -----------------------------
+def fetch_forecast_multi():
+    latitudes = ",".join(str(pt["lat"]) for pt in points.values())
+    longitudes = ",".join(str(pt["lon"]) for pt in points.values())
+    
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={latitudes}&longitude={longitudes}"
+        "&hourly=precipitation,cloud_cover,soil_moisture_0_1cm"
+        "&forecast_days=16&timezone=Asia%2FBangkok"
+    )
+
+    try:
+        data = requests.get(url, timeout=60).json()
+    except Exception as e:
+        print("Error fetching forecast data:", e)
+        return pd.DataFrame()
+    
+    if not isinstance(data, list) or len(data) != len(points):
+        return pd.DataFrame()
+    
+    all_dfs = []
+    for i, dir_name in enumerate(directions):
+        loc_data = data[i]
+        df = pd.DataFrame(loc_data["hourly"])
+        df["direction"] = dir_name
+        df["weight"] = points[dir_name]["weight"]
+        all_dfs.append(df)
+    
+    df_all = pd.concat(all_dfs, ignore_index=True)
+    df_all["time"] = pd.to_datetime(df_all["time"])
+    
+    # Weighted average per jam
+    weighted_list = []
+    for time, group in df_all.groupby("time"):
+        w = group["weight"]
+        weighted_vals = (group[numeric_cols_fore].T * w.values).T.sum()
+        weighted_vals["Datetime"] = time
+        weighted_list.append(weighted_vals)
+    
+    df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "precipitation":"Rainfall",
+        "cloud_cover":"Cloud_cover",
+        "soil_moisture_0_1cm":"Soil_moisture"
+    }, inplace=True)
+    df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]] = df_weighted[["Rainfall","Cloud_cover","Soil_moisture"]].round(2)
+    return df_weighted[["Datetime","Rainfall","Cloud_cover","Soil_moisture"]]
+
+# -----------------------------
 # Run Forecast Button
 # -----------------------------
-run_forecast = st.button("Run 14-Day Forecast")
+run_forecast = st.button("Run 7-Day Forecast")
 if "forecast_done" not in st.session_state:
     st.session_state["forecast_done"] = False
     st.session_state["final_df"] = None
@@ -113,58 +257,102 @@ if run_forecast:
     st.rerun()
 
 # -----------------------------
-# Forecast Logic
+# Forecast Logic (Safe + Progress Detail)
 # -----------------------------
 if upload_success and st.session_state["forecast_running"]:
     progress_container = st.empty()
-    total_forecast_days = 14
-    total_steps = 2 + total_forecast_days  # 2 step: prepare + validation, 14 days forecast
+    
+    total_forecast_hours = 168
+    total_steps = 3 + total_forecast_hours  # 3 step sebelum loop + 168 jam forecast
     step_counter = 0
     progress_bar = st.progress(0)
 
-    # 1️⃣ Prepare historical
-    progress_container.markdown("Preparing historical water level data...")
-    historical_df = wl_daily.copy()
-    historical_df["Source"] = "Historical"
+    # 1️⃣ Fetch historical climate
+    progress_container.markdown("Fetching historical climate data...")
+    climate_hist = fetch_historical_multi(start_datetime - timedelta(hours=72), start_datetime)
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 2️⃣ Prepare forecast DataFrame
-    progress_container.markdown("Preparing forecast DataFrame...")
-    forecast_dates = [start_datetime + timedelta(days=i) for i in range(total_forecast_days)]
-    forecast_df = pd.DataFrame({"Datetime": forecast_dates})
-    forecast_df["Water_level"] = np.nan
-    forecast_df["Source"] = "Forecast"
+    # 2️⃣ Fetch forecast climate
+    progress_container.markdown("Fetching forecast climate data...")
+    climate_forecast = fetch_forecast_multi()
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
-    # 3️⃣ Iterative daily forecast
-    progress_container.markdown("Running daily forecast iteratively...")
-    final_df = pd.concat([historical_df, forecast_df], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
+
+    # 3️⃣ Merge water level and climate data
+    progress_container.markdown("Merging water level and climate data...")
+    
+    # -----------------------------
+    # Pastikan kolom waktu di semua DataFrame
+    # -----------------------------
+    for df_name, df in zip(["wl_hourly", "climate_hist", "climate_forecast"],
+                           [wl_hourly, climate_hist, climate_forecast]):
+        if df is not None:
+            if "Datetime" not in df.columns and "time" in df.columns:
+                df.rename(columns={"time": "Datetime"}, inplace=True)
+    
+    # Konversi ke datetime semua
+    wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
+    climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
+    climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
+    
+    # Merge
+    merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
+    merged_hist["Source"] = "Historical"
+    
+    # Merge forecast
+    forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
+    forecast_df = pd.DataFrame({"Datetime": forecast_hours})
+    forecast_df["Datetime"] = pd.to_datetime(forecast_df["Datetime"])
+    
+    forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
+    forecast_merged["Water_level"] = np.nan
+    forecast_merged["Source"] = "Forecast"
+    
+    # Gabungkan historical + forecast
+    final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
+    final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
+    
+    step_counter += 1
+    progress_bar.progress(step_counter / total_steps)
+
+    # 4️⃣ Iterative forecast
+    progress_container.markdown("Forecasting water level 7 days iteratively...")
     model_features = model.get_booster().feature_names
-
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
+
     for i, idx in enumerate(forecast_indices, start=1):
-        progress_container.markdown(f"Predicting day {i}/{total_forecast_days}...")
+        progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
         X_forecast = pd.DataFrame(columns=model_features, index=[0])
 
         for f in model_features:
             if "_Lag" in f:
                 base, lag_str = f.rsplit("_Lag",1)
-                lag = int(lag_str)
+                try:
+                    lag = int(lag_str)
+                except:
+                    lag = 1
             else:
                 base = f
                 lag = 0
 
+            # Ambil nilai lag dari final_df
             if base in final_df.columns:
+                hist_values = final_df.loc[final_df["Source"]=="Historical", base]
+                # Jika lag lebih besar dari panjang historical, ambil value pertama
                 if idx-lag >= 0:
                     X_forecast.at[0,f] = final_df.iloc[idx-lag].get(base, 0)
                 else:
-                    X_forecast.at[0,f] = final_df[final_df["Source"]=="Historical"].iloc[0].get(base,0)
+                    X_forecast.at[0,f] = hist_values.iloc[0]
             else:
+                # fallback jika kolom tidak ada
                 X_forecast.at[0,f] = 0
 
+        # pastikan tipe float
         X_forecast = X_forecast.astype(float)
+
+        # prediksi
         y_hat = model.predict(X_forecast)[0]
         if y_hat < 0: y_hat = 0
         final_df.at[idx,"Water_level"] = round(y_hat,2)
@@ -175,49 +363,52 @@ if upload_success and st.session_state["forecast_running"]:
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
-    progress_container.markdown("✅ 14-Day Water Level Forecast Completed!")
+    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
-
+    
 # -----------------------------
 # Display Forecast & Plot
 # -----------------------------
 result_container = st.empty()
-if st.session_state.get("forecast_done") and st.session_state.get("final_df") is not None:
+if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
     final_df = st.session_state["final_df"]
     with result_container.container():
-        st.subheader("Historical + Forecast Water Level + Climate Data")
-        
-        # Pilih kolom yang ditampilkan: Water_level + fitur iklim (tanpa lag)
-        display_cols = ["Datetime", "Water_level", "Rainfall", "Cloud_cover", "Soil_moisture", "Source"]
-        # Ambil hanya kolom yang ada di final_df
-        display_cols_existing = [c for c in display_cols if c in final_df.columns]
-        df_display = final_df[display_cols_existing].copy()
-        
+        st.subheader("Water Level + Climate Data with Forecast")
         def highlight_forecast(row):
             return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
+        
+        # Ambil semua kolom numerik
+        numeric_cols = final_df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Terapkan format hanya untuk kolom numerik
+        styled_df = final_df.style.apply(highlight_forecast, axis=1)\
+                                   .format({col: "{:.2f}" for col in numeric_cols})
 
-        numeric_cols = df_display.select_dtypes(include=[np.number]).columns.tolist()
-        styled_df = df_display.style.apply(highlight_forecast, axis=1)\
-                                     .format({col: "{:.2f}" for col in numeric_cols})
         st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
         # Plot
         # -----------------------------
-        st.subheader("Water Level Historical vs Forecast")
+        st.subheader("Water Level Forecast Plot")
         fig = go.Figure()
-        hist_df = final_df[final_df["Source"]=="Historical"]
-        fore_df = final_df[final_df["Source"]=="Forecast"]
-
+        hist_df = final_df[final_df["Source"] == "Historical"]
+        fore_df = final_df[final_df["Source"] == "Forecast"]
+        
+        # Hitung RMSE antara data historis terakhir dan forecast awal (jika ada data aktual)
         if not fore_df.empty:
-            rmse = 0.05
+            # Contoh nilai RMSE, bisa kamu ubah kalau mau dinamis
+            rmse = 0.05  
+        
             last_val = hist_df["Water_level"].iloc[-1]
             forecast_x = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), fore_df["Datetime"]])
             forecast_y = pd.concat([pd.Series([last_val]), fore_df["Water_level"]])
+        
+            # Hitung batas atas & bawah error band
             upper_y = forecast_y + rmse
             lower_y = forecast_y - rmse
-            lower_y = lower_y.clip(lower=0)
-
+            lower_y = lower_y.clip(lower=0)  # batas bawah tidak boleh < 0
+        
+            # Tambah area ±RMSE
             fig.add_trace(go.Scatter(
                 x=pd.concat([forecast_x, forecast_x[::-1]]),
                 y=pd.concat([upper_y, lower_y[::-1]]),
@@ -226,29 +417,31 @@ if st.session_state.get("forecast_done") and st.session_state.get("final_df") is
                 line=dict(color="rgba(255,165,0,0)"),
                 hoverinfo="skip",
                 showlegend=True,
-                name="±RMSE"
+                name="±RMSE 0.05m"
             ))
+        
+            # Tambah garis forecast
             fig.add_trace(go.Scatter(
-                x=forecast_x,
-                y=forecast_y,
+                x=forecast_x, y=forecast_y,
                 mode="lines+markers",
                 name="Forecast",
                 line=dict(color="orange"),
-                marker=dict(size=6)
+                marker=dict(size=4)
             ))
-
+        
+        # Garis historis
         fig.add_trace(go.Scatter(
-            x=hist_df["Datetime"],
-            y=hist_df["Water_level"],
+            x=hist_df["Datetime"], y=hist_df["Water_level"],
             mode="lines+markers",
             name="Historical",
             line=dict(color="blue"),
-            marker=dict(size=6)
+            marker=dict(size=4)
         ))
-
+        
+        # Layout dan annotation RMSE
         fig.update_layout(
             title="Water Level Historical vs Forecast",
-            xaxis_title="Date",
+            xaxis_title="Datetime",
             yaxis_title="Water Level (m)",
             template="plotly_white",
             annotations=[
@@ -265,24 +458,26 @@ if st.session_state.get("forecast_done") and st.session_state.get("final_df") is
                 )
             ]
         )
+        
         st.plotly_chart(fig, use_container_width=True)
-
+        
         # -----------------------------
-        # Download forecast only
+        # Downloads (Forecast only, Datetime + Water_level, 2 decimals)
         # -----------------------------
-        forecast_only = final_df[final_df["Source"]=="Forecast"][["Datetime","Water_level"]].copy()
+        forecast_only = final_df[final_df["Source"] == "Forecast"][["Datetime", "Water_level"]].copy()
         forecast_only["Water_level"] = forecast_only["Water_level"].round(2)
         forecast_only["Datetime"] = forecast_only["Datetime"].astype(str)
 
+        
         # CSV
         csv_buffer = forecast_only.to_csv(index=False).encode('utf-8')
-
+        
         # Excel
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             forecast_only.to_excel(writer, index=False, sheet_name="Forecast")
         excel_buffer.seek(0)
-
+        
         # PDF
         pdf_buffer = BytesIO()
         doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
@@ -300,7 +495,7 @@ if st.session_state.get("forecast_done") and st.session_state.get("final_df") is
         ]))
         elements = [Paragraph("Joloi Water Level Forecast (Forecast Only)", styles["Title"]), table]
         doc.build(elements)
-
+        
         # Download buttons
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -310,3 +505,6 @@ if st.session_state.get("forecast_done") and st.session_state.get("final_df") is
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col3:
             st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
+
+else:
+    result_container.empty()
