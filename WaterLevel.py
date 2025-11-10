@@ -324,8 +324,19 @@ if upload_success and st.session_state["forecast_running"]:
     forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
     forecast_merged["Water_level"] = np.nan
     forecast_merged["Source"] = "Forecast"
+    
+    # -----------------------------
+    # Pastikan semua jam ada dan forward fill NaN
+    # -----------------------------
+    forecast_merged = forecast_merged.set_index("Datetime").sort_index()
+    forecast_merged = forecast_merged.reindex(forecast_hours)  # pastikan semua jam ada
+    forecast_merged = forecast_merged.fillna(method='ffill')    # forward fill untuk NaN
+    forecast_merged["Source"] = "Forecast"
+    forecast_merged["Water_level"] = np.nan  # reset karena ffill bisa mempengaruhi kolom ini
+    forecast_merged = forecast_merged.reset_index()
 
-    final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
+    final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True)
+    final_df = final_df.sort_values("Datetime").set_index("Datetime")  # Datetime sebagai index
     final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
 
     step_counter += 1
@@ -352,17 +363,13 @@ if upload_success and st.session_state["forecast_running"]:
                 lag = 0
     
             if base in final_df.columns:
-                if idx - lag >= 0:
-                    X_forecast.at[0, f] = final_df.iloc[idx - lag][base]
-                else:
-                    # Ambil nilai historical terakhir
+                lagged_series = final_df[base].shift(lag)
+                val = lagged_series.loc[idx]
+                if pd.isna(val):
                     hist_vals = final_df.loc[final_df["Source"]=="Historical", base]
-                    if not hist_vals.empty:
-                        X_forecast.at[0, f] = hist_vals.iloc[0]
-                    else:
-                        X_forecast.at[0, f] = 0
+                    val = hist_vals.iloc[-1] if not hist_vals.empty else 0
+                X_forecast.at[0, f] = val
             else:
-                print(f"Warning: {base} missing in final_df, set default 0")
                 X_forecast.at[0, f] = 0
     
         X_forecast = X_forecast.astype(float)
