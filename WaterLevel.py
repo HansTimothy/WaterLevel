@@ -384,7 +384,7 @@ if upload_success and st.session_state["forecast_running"]:
 
         for f in model_features:
             if "_Lag" in f:
-                base, lag_str = f.rsplit("_Lag",1)
+                base, lag_str = f.rsplit("_Lag", 1)
                 try:
                     lag = int(lag_str)
                 except:
@@ -395,23 +395,22 @@ if upload_success and st.session_state["forecast_running"]:
 
             # Ambil nilai lag dari final_df
             if base in final_df.columns:
-                hist_values = final_df.loc[final_df["Source"]=="Historical", base]
-                # Jika lag lebih besar dari panjang historical, ambil value pertama
-                if idx-lag >= 0:
-                    X_forecast.at[0,f] = final_df.iloc[idx-lag].get(base, 0)
+                if idx - lag >= 0:
+                    X_forecast.at[0, f] = final_df.iloc[idx - lag].get(base, 0)
                 else:
-                    X_forecast.at[0,f] = hist_values.iloc[0]
+                    X_forecast.at[0, f] = final_df[base].iloc[0]
             else:
                 # fallback jika kolom tidak ada
-                X_forecast.at[0,f] = 0
+                X_forecast.at[0, f] = 0
 
         # pastikan tipe float
         X_forecast = X_forecast.astype(float)
 
         # prediksi
         y_hat = model.predict(X_forecast)[0]
-        if y_hat < 0: y_hat = 0
-        final_df.at[idx,"Water_level"] = round(y_hat,2)
+        if y_hat < 0:
+            y_hat = 0
+        final_df.at[idx, "Water_level"] = round(y_hat, 2)
 
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
