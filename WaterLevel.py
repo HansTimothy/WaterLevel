@@ -1,4 +1,4 @@
-import streamlit as st
+    import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
@@ -273,6 +273,42 @@ def fetch_forecast_multi_point(variable_mapping=variable_mapping_fore):
     return final_df
 
 # -----------------------------
+# Fungsi hybrid fetch historical + forecast
+# -----------------------------
+def fetch_climate_hybrid(start_datetime, total_forecast_hours=168):
+    now_gmt7 = datetime.utcnow() + timedelta(hours=7)
+    
+    # Historical: 4 hari sebelum start_datetime hingga start_datetime (atau now jika start_datetime di masa lalu)
+    hist_start = start_datetime - timedelta(hours=96)
+    hist_end = min(start_datetime, now_gmt7)
+    
+    climate_hist = None
+    if hist_start < now_gmt7:
+        climate_hist = fetch_historical_multi_point(hist_start, hist_end)
+        climate_hist["Source"] = "Historical"
+    
+    # Forecast: dari max(start_datetime, now) sampai end forecast
+    forecast_start = max(start_datetime, now_gmt7)
+    forecast_end = start_datetime + timedelta(hours=total_forecast_hours)
+    climate_forecast = None
+    if forecast_start < forecast_end:
+        climate_forecast = fetch_forecast_multi_point()
+        climate_forecast = climate_forecast[climate_forecast["Datetime"] >= forecast_start].reset_index(drop=True)
+        climate_forecast["Source"] = "Forecast"
+    
+    # Gabungkan historical + forecast
+    if climate_hist is not None and climate_forecast is not None:
+        final_climate = pd.concat([climate_hist, climate_forecast], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
+    elif climate_hist is not None:
+        final_climate = climate_hist
+    elif climate_forecast is not None:
+        final_climate = climate_forecast
+    else:
+        final_climate = pd.DataFrame()
+    
+    return final_climate
+
+# -----------------------------
 # Run Forecast Button
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
@@ -297,42 +333,23 @@ if upload_success and st.session_state["forecast_running"]:
     step_counter = 0
     progress_bar = st.progress(0)
 
-    # 1️⃣ Fetch historical climate
-    progress_container.markdown("Fetching historical climate data...")
-    climate_hist = fetch_historical_multi_point(start_datetime - timedelta(hours=96), start_datetime)
+    # 1️⃣ Fetch climate hybrid (historical + forecast)
+    progress_container.markdown("Fetching historical + forecast climate data...")
+    climate_all = fetch_climate_hybrid(start_datetime, total_forecast_hours)
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
-
-    # 2️⃣ Fetch forecast climate
-    progress_container.markdown("Fetching forecast climate data...")
-    climate_forecast = fetch_forecast_multi_point()
-    step_counter += 1
-    progress_bar.progress(step_counter / total_steps)
-
-    # 3️⃣ Merge water level + climate
+    
+    # 2️⃣ Merge water level + climate
     progress_container.markdown("Merging water level and climate data...")
     wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
-    climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
-    climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
-
-    merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
-    merged_hist["Source"] = "Historical"
-
-    forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
-    forecast_df = pd.DataFrame({"Datetime": forecast_hours})
-    forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
-    forecast_merged["Water_level"] = np.nan
-    forecast_merged["Source"] = "Forecast"
+    climate_all["Datetime"] = pd.to_datetime(climate_all["Datetime"])
     
-    # Pastikan semua jam ada dan forward fill
-    forecast_merged = forecast_merged.set_index("Datetime").sort_index()
-    forecast_merged = forecast_merged.reindex(forecast_hours)
-    forecast_merged = forecast_merged.fillna(method='ffill')
-    forecast_merged["Water_level"] = np.nan
-    forecast_merged = forecast_merged.reset_index()
-
-    # Gabungkan historical + forecast
-    final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime").reset_index(drop=True)
+    # Merge water level dengan climate hybrid
+    merged_df = pd.merge(wl_hourly, climate_all, on="Datetime", how="outer").sort_values("Datetime").reset_index(drop=True)
+    
+    # Pastikan kolom Source sudah ada
+    merged_df["Source"] = merged_df["Source"].fillna("Forecast")
+    final_df = merged_df.copy()
     final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
 
     step_counter += 1
