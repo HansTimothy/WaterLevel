@@ -383,7 +383,7 @@ if upload_success and st.session_state.get("forecast_running", False):
     try:
         # 1️⃣ Fetch historical climate
         progress_container.markdown("Fetching historical climate data...")
-        climate_hist = fetch_historical_multi(start_datetime - timedelta(hours=72), start_datetime)
+        climate_hist = fetch_historical_multi(start_datetime - timedelta(hours=96), start_datetime)
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
