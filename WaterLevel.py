@@ -337,7 +337,7 @@ if upload_success and st.session_state["forecast_running"]:
     progress_container.markdown("Fetching historical + forecast climate data...")
     climate_all = fetch_climate_hybrid(start_datetime, total_forecast_hours)
     step_counter += 1
-    progress_bar.progress(step_counter / total_steps)
+    progress_bar.progress(min(step_counter / total_steps, 1.0))
     
     # 2️⃣ Merge water level + climate
     progress_container.markdown("Merging water level and climate data...")
@@ -353,14 +353,11 @@ if upload_success and st.session_state["forecast_running"]:
     final_df = final_df.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
 
     step_counter += 1
-    progress_bar.progress(step_counter / total_steps)
+    progress_bar.progress(min(step_counter / total_steps, 1.0))
 
     # 4️⃣ Iterative forecast
-    progress_container.markdown("Forecasting water level 7 days iteratively...")
-    # Ambil index jam forecast
+   progress_container.markdown("Forecasting water level 7 days iteratively...")
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
-    
-    # Simpan nama fitur XGB
     model_features = model.get_booster().feature_names
     
     for i, idx in enumerate(forecast_indices, start=1):
@@ -377,10 +374,8 @@ if upload_success and st.session_state["forecast_running"]:
                 lag = 0
     
             if base in final_df.columns:
-                # Shift berdasarkan lag dari data gabungan historical + forecast sebelumnya
                 lagged_series = final_df[base].shift(lag)
                 val = lagged_series.loc[idx]
-                # Jika NaN, pakai last historical value
                 if pd.isna(val):
                     hist_vals = final_df.loc[final_df["Source"]=="Historical", base]
                     val = hist_vals.iloc[-1] if not hist_vals.empty else 0
@@ -389,14 +384,16 @@ if upload_success and st.session_state["forecast_running"]:
                 X_forecast.at[0, f] = 0
         
         X_forecast = X_forecast.astype(float)
-        y_hat = model.predict(X_forecast)[0]
         
-        # Masukkan hasil prediksi ke dataframe
-        final_df.at[idx, "Water_level"] = max(round(y_hat,2), 0)
-        
-        # Sekarang lag untuk jam berikutnya otomatis akan mengambil prediksi ini
+        try:
+            y_hat = model.predict(X_forecast)[0]
+            final_df.at[idx, "Water_level"] = max(round(y_hat,2), 0)
+        except Exception as e:
+            final_df.at[idx, "Water_level"] = 0
+    
+        # Update progress bar, batasi max 1.0
         step_counter += 1
-        progress_bar.progress(step_counter / total_steps)
+        progress_bar.progress(min(step_counter / total_steps, 1.0))
 
 
     st.session_state["final_df"] = final_df
