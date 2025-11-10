@@ -44,8 +44,8 @@ st.subheader("Instructions for Uploading Water Level Data")
 st.info(
     f"- CSV must contain columns: 'Datetime' and 'Level Air'.\n"
     f"- 'Datetime' format: YYYY-MM-DD HH:MM:SS\n"
-    f"- Data must cover **24 hours before the selected start datetime**: "
-    f"{start_datetime - timedelta(hours=24)} to {start_datetime}\n"
+    f"- Data must cover **7 days before the selected start datetime**: "
+    f"{start_datetime - timedelta(hours=168)} to {start_datetime}\n"
     f"- Make sure there are no missing hours."
 )
 
@@ -123,48 +123,6 @@ if uploaded_file is not None:
                 
     except Exception as e:
         st.error(f"Failed to read file: {e}")
-
-# -----------------------------
-# 2️⃣ Multi-point climate fetch (4 titik: T_, SL_, MB_, MU_)
-# -----------------------------
-multi_points = {
-    "T_": {
-        "coords": {
-            "NW": (0.38664, 113.78421), "N": (0.38664, 114.83972), "NE": (0.38664, 115.89523),
-            "W": (-0.59754, 113.76960), "Center": (-0.59754, 114.82759), "E": (-0.59754, 115.81505),
-            "SW": (-1.65202, 113.76685), "S": (-1.65202, 114.76606), "SE": (-1.65202, 115.83664)
-        },
-        "weights": {"Center": 0.992519, "E": 0.001271, "N": 0.001287, "NE": 0.000591, "NW":0.000639,
-                    "S":0.001232, "SE":0.000613, "SW":0.000615, "W":0.001233}
-    },
-    "SL_": {
-        "coords": {
-            "NW": (0.52724, 113.68050), "N": (0.52724, 114.73766), "NE": (0.52724, 115.65387),
-            "W": (-0.45694, 113.73240), "Center": (-0.45694, 114.71832), "E": (-0.45694, 115.70423),
-            "SW": (-1.44112, 113.71044), "S": (-1.44112, 114.70727), "SE": (-1.44112, 115.63291)
-        },
-        "weights": {"Center":0.995940, "E":0.000639, "N":0.000679, "NE":0.000347, "NW":0.000329,
-                    "S":0.000669, "SE":0.000352, "SW":0.000337, "W":0.000708}
-    },
-    "MB_": {
-        "coords": {
-            "NW": (0.38664, 113.64348), "N": (0.38664, 114.55825), "NE": (0.38664, 115.61377),
-            "W": (-0.59754, 113.62853), "Center": (-0.59754, 114.61599), "E": (-0.59754, 115.60345),
-            "SW": (-1.58172, 113.60538), "S": (-1.58172, 114.60380), "SE": (-1.58172, 115.53090)
-        },
-        "weights": {"Center":0.997992, "E":0.000345, "N":0.000332, "NE":0.000168, "NW":0.000166,
-                    "S":0.000334, "SE":0.000183, "SW":0.000160, "W":0.000320}
-    },
-    "MU_": {
-        "coords": {
-            "NW": (0.31634, 113.48438), "N": (0.31634, 114.53906), "NE": (0.31634, 115.52344),
-            "W": (-0.73814, 113.52433), "Center": (-0.73814, 114.51334), "E": (-0.73814, 115.50235),
-            "SW": (-1.72232, 113.50001), "S": (-1.72232, 114.50001), "SE": (-1.72232, 115.50001)
-        },
-        "weights": {"Center":0.992616, "E":0.001309, "N":0.001197, "NE":0.000613, "NW":0.000587,
-                    "S":0.001206, "SE":0.000630, "SW":0.000598, "W":0.001244}
-    }
-}
 
 # -----------------------------
 # Multi-point coordinates + bobot IDW
@@ -342,7 +300,7 @@ if upload_success and st.session_state["forecast_running"]:
 
     # 1️⃣ Fetch historical climate
     progress_container.markdown("Fetching historical climate data...")
-    climate_hist = fetch_historical_multi_point(start_datetime - timedelta(hours=72), start_datetime)
+    climate_hist = fetch_historical_multi_point(start_datetime - timedelta(hours=168), start_datetime)
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
