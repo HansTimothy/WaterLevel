@@ -356,7 +356,7 @@ if upload_success and st.session_state["forecast_running"]:
     progress_bar.progress(min(step_counter / total_steps, 1.0))
 
     # 4️⃣ Iterative forecast
-   progress_container.markdown("Forecasting water level 7 days iteratively...")
+    progress_container.markdown("Forecasting water level 7 days iteratively...")
     forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
     model_features = model.get_booster().feature_names
     
