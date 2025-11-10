@@ -351,9 +351,6 @@ def fetch_forecast_multi(show_warnings=True):
 # -----------------------------
 # Run Forecast Button (Streamlit)
 # -----------------------------
-# -----------------------------
-# Tombol Run Forecast
-# -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
 
 # Inisialisasi session_state
@@ -381,38 +378,52 @@ if upload_success and st.session_state.get("forecast_running", False):
     total_steps = 3 + total_forecast_hours
 
     try:
-        # 1️⃣ Fetch historical climate
-        progress_container.markdown("Fetching historical climate data...")
+        gmt7_now = datetime.utcnow() + timedelta(hours=7)
+        forecast_end = start_datetime + timedelta(hours=168)
+
+        # 1️⃣ Fetch historical climate (4 hari sebelum start)
+        progress_container.markdown("Fetching 4-day historical climate data...")
         climate_hist = fetch_historical_multi(start_datetime - timedelta(hours=96), start_datetime)
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
-        # 2️⃣ Fetch forecast climate
-        progress_container.markdown("Fetching forecast climate data...")
-        climate_forecast = fetch_forecast_multi()
+        # 2️⃣ Tentukan jenis data yang diambil untuk periode forecast
+        if start_datetime < gmt7_now:
+            if forecast_end <= gmt7_now:
+                # Semua periode masih di masa lalu → pakai historical semua
+                progress_container.markdown("Fetching full historical climate data (since selected time is in the past)...")
+                climate_forecast = fetch_historical_multi(start_datetime, forecast_end)
+            else:
+                # Kombinasi: sebagian masa lalu (historical) + masa depan (forecast)
+                progress_container.markdown("Fetching mixed climate data (historical + forecast)...")
+                climate_past = fetch_historical_multi(start_datetime, gmt7_now)
+                climate_future = fetch_forecast_multi()
+                # Gabungkan dua bagian
+                climate_forecast = pd.concat([climate_past, climate_future]).drop_duplicates(subset="Datetime").sort_values("Datetime").reset_index(drop=True)
+        else:
+            # Semua ke depan → pakai forecast penuh
+            progress_container.markdown("Fetching full forecast climate data...")
+            climate_forecast = fetch_forecast_multi()
+
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
         # 3️⃣ Merge water level and climate data
         progress_container.markdown("Merging water level and climate data...")
 
-        # Pastikan kolom waktu di semua DataFrame
         for df_name, df in zip(["wl_hourly", "climate_hist", "climate_forecast"],
                                [wl_hourly, climate_hist, climate_forecast]):
             if df is not None:
                 if "Datetime" not in df.columns and "time" in df.columns:
                     df.rename(columns={"time": "Datetime"}, inplace=True)
 
-        # Konversi ke datetime
         wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
         climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
         climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
 
-        # Merge historical data
         merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
         merged_hist["Source"] = "Historical"
 
-        # Merge forecast data
         forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
         forecast_df = pd.DataFrame({"Datetime": pd.to_datetime(forecast_hours)})
 
@@ -420,7 +431,6 @@ if upload_success and st.session_state.get("forecast_running", False):
         forecast_merged["Water_level"] = np.nan
         forecast_merged["Source"] = "Forecast"
 
-        # Gabungkan semuanya
         final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
         final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
 
@@ -430,11 +440,12 @@ if upload_success and st.session_state.get("forecast_running", False):
 
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
-        progress_container.success("✅ Forecast selesai!")
+        progress_container.success("✅ Climate data fetching complete!")
 
     except Exception as e:
         st.session_state["forecast_running"] = False
-        progress_container.error(f"Terjadi error: {e}")
+        progress_container.error(f"Terjadi error saat fetching data: {e}")
+
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
     # Gunakan urutan manual fitur
