@@ -351,120 +351,90 @@ def fetch_forecast_multi(show_warnings=True):
 # -----------------------------
 # Run Forecast Button (Streamlit)
 # -----------------------------
+# -----------------------------
+# Tombol Run Forecast
+# -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
+
+# Inisialisasi session_state
 if "forecast_done" not in st.session_state:
     st.session_state["forecast_done"] = False
     st.session_state["final_df"] = None
     st.session_state["forecast_running"] = False
 
+# Jika tombol diklik → trigger proses
 if run_forecast:
     st.session_state["forecast_done"] = False
     st.session_state["final_df"] = None
     st.session_state["forecast_running"] = True
 
-# -----------------------------
-# Forecast Logic (Safe + Progress Detail)
-# -----------------------------
-if 'upload_success' in globals() and upload_success and st.session_state.get("forecast_running", False):
-    progress_container = st.empty()
-    total_forecast_hours = 168
-    total_steps = 3 + total_forecast_hours  # 3 langkah + 168 jam
-    step_counter = 0
-    progress_bar = st.progress(0.0)
 
-    # Pastikan start_datetime tersedia
-    if 'start_datetime' not in globals():
-        st.error("start_datetime tidak ditemukan. Pastikan variabel start_datetime tersedia.")
-    else:
-        # 1️⃣ Fetch historical climate (72 jam sebelum start_datetime)
-        progress_container.markdown("Fetching historical climate data for 4 locations...")
-        hist_start = start_datetime - timedelta(hours=72)
-        climate_hist = fetch_historical_multi(hist_start, start_datetime)
+# -----------------------------
+# Forecast Logic hanya jalan setelah klik tombol
+# -----------------------------
+if upload_success and st.session_state.get("forecast_running", False):
+
+    progress_container = st.empty()
+    progress_bar = st.progress(0)
+    step_counter = 0
+    total_forecast_hours = 168
+    total_steps = 3 + total_forecast_hours
+
+    try:
+        # 1️⃣ Fetch historical climate
+        progress_container.markdown("Fetching historical climate data...")
+        climate_hist = fetch_historical_multi(start_datetime - timedelta(hours=72), start_datetime)
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
         # 2️⃣ Fetch forecast climate
-        progress_container.markdown("Fetching forecast climate data for 4 locations...")
+        progress_container.markdown("Fetching forecast climate data...")
         climate_forecast = fetch_forecast_multi()
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
         # 3️⃣ Merge water level and climate data
         progress_container.markdown("Merging water level and climate data...")
-        # Pastikan kolom waktu di semua DataFrame konsisten
+
+        # Pastikan kolom waktu di semua DataFrame
         for df_name, df in zip(["wl_hourly", "climate_hist", "climate_forecast"],
-                               [globals().get("wl_hourly", None), climate_hist, climate_forecast]):
-            if df is not None and isinstance(df, pd.DataFrame):
+                               [wl_hourly, climate_hist, climate_forecast]):
+            if df is not None:
                 if "Datetime" not in df.columns and "time" in df.columns:
                     df.rename(columns={"time": "Datetime"}, inplace=True)
 
-        # Validasi wl_hourly
-        if 'wl_hourly' not in globals() or wl_hourly is None or not isinstance(wl_hourly, pd.DataFrame):
-            st.error("wl_hourly tidak ditemukan atau bukan DataFrame. Pastikan data water level di-upload terlebih dahulu.")
-        else:
-            # Konversi Datetime
-            wl_hourly = wl_hourly.copy()
-            if "Datetime" not in wl_hourly.columns and "time" in wl_hourly.columns:
-                wl_hourly.rename(columns={"time": "Datetime"}, inplace=True)
-            wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
+        # Konversi ke datetime
+        wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
+        climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
+        climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
 
-            # climate_hist & climate_forecast pastikan ada kolom Datetime
-            if isinstance(climate_hist, pd.DataFrame) and "Datetime" in climate_hist.columns:
-                climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
-            if isinstance(climate_forecast, pd.DataFrame) and "Datetime" in climate_forecast.columns:
-                climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
+        # Merge historical data
+        merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
+        merged_hist["Source"] = "Historical"
 
-            # Merge historical: wl_hourly (yang mungkin berisi lebih lama) dengan climate_hist
-            merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
-            merged_hist["Source"] = "Historical"
+        # Merge forecast data
+        forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
+        forecast_df = pd.DataFrame({"Datetime": pd.to_datetime(forecast_hours)})
 
-            # Build forecast dataframe (168 jam) mulai dari start_datetime
-            forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
-            forecast_df = pd.DataFrame({"Datetime": forecast_hours})
-            forecast_df["Datetime"] = pd.to_datetime(forecast_df["Datetime"])
+        forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
+        forecast_merged["Water_level"] = np.nan
+        forecast_merged["Source"] = "Forecast"
 
-            # Merge forecast climate hasil fetch dengan forecast_df
-            forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
-            # Untuk forecast, tidak ada water level -> isi NaN
-            forecast_merged["Water_level"] = np.nan
-            forecast_merged["Source"] = "Forecast"
+        # Gabungkan semuanya
+        final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
+        final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
 
-            # Gabungkan historical + forecast
-            final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
-            # Pastikan urutan kolom sesuai request
-            # Kolom yang diinginkan (Datetime, Water_level, T_..., SL_..., MB_..., MU_...)
-            ordered_cols = ["Datetime", "Water_level"]
-            # Deteksi kolom per prefix secara alfabet (tetap urut T_, SL_, MB_, MU_ sesuai keinginan)
-            prefixes = ["T_", "SL_", "MB_", "MU_"]
-            for p in prefixes:
-                # possible columns per prefix (relative humidity, rainfall, cloud, surface pressure)
-                for suf in ["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]:
-                    colname = f"{p}{suf}"
-                    if colname in final_df.columns:
-                        ordered_cols.append(colname)
+        st.session_state["final_df"] = final_df
+        st.session_state["forecast_done"] = True
+        st.session_state["forecast_running"] = False
 
-            # Apply rounding numerics
-            final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
+        step_counter += 1
+        progress_bar.progress(step_counter / total_steps)
+        progress_container.success("✅ Forecast selesai!")
 
-            # Reindex columns: let missing columns be left out, but ensure Datetime & Water_level present
-            final_df = final_df[[c for c in ordered_cols if c in final_df.columns] + 
-                                [c for c in final_df.columns if c not in ordered_cols]]
-
-            # simpan ke session state
-            st.session_state["final_df"] = final_df
-            st.session_state["forecast_done"] = True
-            st.session_state["forecast_running"] = False
-
-            step_counter += 1
-            progress_bar.progress(step_counter / total_steps)
-
-            progress_container.success("Forecast complete — final_df siap.")
-            st.write("Preview final_df:")
-            st.dataframe(final_df.head(50))
-else:
-    # jika belum upload_success atau tidak running, tidak melakukan apa-apa
-    pass
-
+    except Exception as e:
+        st.session_state["forecast_running"] = False
+        progress_container.error(f"Terjadi error: {e}")
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
     # Gunakan urutan manual fitur
