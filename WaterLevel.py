@@ -44,8 +44,8 @@ st.subheader("Instructions for Uploading Water Level Data")
 st.info(
     f"- CSV must contain columns: 'Datetime' and 'Level Air'.\n"
     f"- 'Datetime' format: YYYY-MM-DD HH:MM:SS\n"
-    f"- Data must cover **72 hours before the selected start datetime**: "
-    f"{start_datetime - timedelta(hours=72)} to {start_datetime}\n"
+    f"- Data must cover **24 hours before the selected start datetime**: "
+    f"{start_datetime - timedelta(hours=24)} to {start_datetime}\n"
     f"- Make sure there are no missing hours."
 )
 
