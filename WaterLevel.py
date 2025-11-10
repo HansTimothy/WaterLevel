@@ -61,7 +61,7 @@ if uploaded_file is not None:
         df_raw = pd.read_csv(uploaded_file, engine='python', skip_blank_lines=True)
         
         # Pastikan kolom ada
-        if "Datetime" not in df_raw.columns or "Water_level" not in df_raw.columns:
+        if "Datetime" not in df_raw.columns or "Level Air" not in df_raw.columns:
             st.error("The file must contain columns 'Datetime' and 'Level Air'.")
         else:
             # -----------------------
