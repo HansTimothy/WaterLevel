@@ -44,8 +44,8 @@ st.subheader("Instructions for Uploading Water Level Data")
 st.info(
     f"- CSV must contain columns: 'Datetime' and 'Level Air'.\n"
     f"- 'Datetime' format: YYYY-MM-DD HH:MM:SS\n"
-    f"- Data must cover **7 days before the selected start datetime**: "
-    f"{start_datetime - timedelta(hours=168)} to {start_datetime}\n"
+    f"- Data must cover **4 days before the selected start datetime**: "
+    f"{start_datetime - timedelta(hours=96)} to {start_datetime}\n"
     f"- Make sure there are no missing hours."
 )
 
@@ -300,7 +300,7 @@ if upload_success and st.session_state["forecast_running"]:
 
     # 1️⃣ Fetch historical climate
     progress_container.markdown("Fetching historical climate data...")
-    climate_hist = fetch_historical_multi_point(start_datetime - timedelta(hours=168), start_datetime)
+    climate_hist = fetch_historical_multi_point(start_datetime - timedelta(hours=96), start_datetime)
     step_counter += 1
     progress_bar.progress(step_counter / total_steps)
 
@@ -339,7 +339,7 @@ if upload_success and st.session_state["forecast_running"]:
     for i, idx in enumerate(forecast_indices, start=1):
         progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
         X_forecast = pd.DataFrame(columns=model_features, index=[0])
-
+    
         for f in model_features:
             if "_Lag" in f:
                 base, lag_str = f.rsplit("_Lag", 1)
@@ -350,26 +350,25 @@ if upload_success and st.session_state["forecast_running"]:
             else:
                 base = f
                 lag = 0
-
-            # Ambil nilai lag dari final_df
+    
             if base in final_df.columns:
                 if idx - lag >= 0:
-                    X_forecast.at[0, f] = final_df.iloc[idx - lag].get(base, 0)
+                    X_forecast.at[0, f] = final_df.iloc[idx - lag][base]
                 else:
-                    X_forecast.at[0, f] = final_df[base].iloc[0]
+                    # Ambil nilai historical terakhir
+                    hist_vals = final_df.loc[final_df["Source"]=="Historical", base]
+                    if not hist_vals.empty:
+                        X_forecast.at[0, f] = hist_vals.iloc[0]
+                    else:
+                        X_forecast.at[0, f] = 0
             else:
-                # fallback jika kolom tidak ada
+                print(f"Warning: {base} missing in final_df, set default 0")
                 X_forecast.at[0, f] = 0
-
-        # pastikan tipe float
+    
         X_forecast = X_forecast.astype(float)
-
-        # prediksi
         y_hat = model.predict(X_forecast)[0]
-        if y_hat < 0:
-            y_hat = 0
-        final_df.at[idx, "Water_level"] = round(y_hat, 2)
-
+        final_df.at[idx, "Water_level"] = max(round(y_hat,2), 0)
+    
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
