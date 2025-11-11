@@ -1,14 +1,11 @@
-streamlit
-pandas
-numpy
-scikit-learn
-joblib
-plotly
-pytz
-XlsxWriter
-openpyxl
-reportlab
-tensorflow
-h5py
-requests
-
+streamlit 
+pandas 
+numpy 
+scikit-learn 
+xgboost joblib 
+plotly 
+pytz 
+XlsxWriter 
+openpyxl 
+reportlab 
+scipy
