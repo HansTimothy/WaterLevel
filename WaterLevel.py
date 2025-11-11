@@ -451,7 +451,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Semua data sebelum start_datetime = Historical, setelah = Forecast
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
 
-    forecast_mask = (final_df["Datetime"] > start_datetime) & (final_df["Datetime"] <= start_datetime + timedelta(hours=168))
+    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
     forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
 
     for i, idx in enumerate(forecast_indices, start=1):
