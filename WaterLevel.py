@@ -13,10 +13,10 @@ import plotly.graph_objects as go
 from tensorflow.keras.models import load_model
 
 # Load model & scaler
-model = load_model("lstm_waterlevel_model.keras")
+model = load_model("best_LSTM_model.keras")
 scaler_X = joblib.load("scaler_X.pkl")
 scaler_y = joblib.load("scaler_y.pkl")
-feature_cols = joblib.load("feature_names.pkl")  # urutan fitur saat training
+feature_cols = joblib.load("feature_names.pkl") 
 window_size = 24  # harus sama dengan waktu training
 st.title("🌊 Water Level Forecast Dashboard")
 
