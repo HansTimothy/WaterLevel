@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
-model = joblib.load("xgb_waterlevel_hourly_model.pkl")
+model = joblib.load("xgb_waterlevel_hourly_model_2.pkl")
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
@@ -414,11 +414,10 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Ganti nama kolom jadi prefiks region (T_, SL_, dst)
         rename_map = {
             "Relative_humidity": f"{region_name}Relative_humidity",
-            # "Rainfall": f"{region_name}Rainfall",  <-- skip untuk MB_
             "Cloud_cover": f"{region_name}Cloud_cover",
             "Surface_pressure": f"{region_name}Surface_pressure",
         }
-        if region_name != "MB_":
+        if region_name not in ["SL_", "MB_", "MU_"]:
             rename_map["Rainfall"] = f"{region_name}Rainfall"
         combined_df.rename(columns=rename_map, inplace=True)
 
@@ -530,7 +529,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         # Hitung RMSE antara data historis terakhir dan forecast awal (jika ada data aktual)
         if not fore_df.empty:
             # Contoh nilai RMSE, bisa kamu ubah kalau mau dinamis
-            rmse = 0.04  
+            rmse = 0.03  
         
             last_val = hist_df["Water_level"].iloc[-1]
             forecast_x = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), fore_df["Datetime"]])
@@ -550,7 +549,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                 line=dict(color="rgba(255,165,0,0)"),
                 hoverinfo="skip",
                 showlegend=True,
-                name="±RMSE 0.04m"
+                name="±RMSE 0.03m"
             ))
         
             # Tambah garis forecast
@@ -569,6 +568,23 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             name="Historical",
             line=dict(color="blue"),
             marker=dict(size=4)
+        ))
+
+        # Tambah garis horizontal limit
+        fig.add_trace(go.Scatter(
+            x=[final_df["Datetime"].min(), final_df["Datetime"].max()],  # sepanjang sumbu X
+            y=[19.5, 19.5],  # nilai horizontal tetap
+            mode="lines",
+            line=dict(color="red", dash="dash"),  # garis putus-putus merah
+            name="Lower Limit 19.5 m"
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=[final_df["Datetime"].min(), final_df["Datetime"].max()],
+            y=[28, 28],
+            mode="lines",
+            line=dict(color="red", dash="dash"),
+            name="Upper Limit 28 m"
         ))
         
         # Layout dan annotation RMSE
