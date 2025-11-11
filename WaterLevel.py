@@ -10,11 +10,14 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
+from tensorflow.keras.models import load_model
 
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
-model = joblib.load("xgb_waterlevel_hourly_model.pkl")
+model = load_model("lstm_waterlevel_model.h5")
+scaler_X = joblib.load("scaler_X.pkl")
+scaler_y = joblib.load("scaler_y.pkl")
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
@@ -446,8 +449,6 @@ if upload_success and st.session_state.get("forecast_running", False):
     # model_features = model.get_booster().feature_names
     model_features = []
 
-    model_features = []
-
     # T_ group
     for i in range(61, 96):
         model_features.append(f"T_Relative_humidity_Lag{i}")
@@ -486,7 +487,6 @@ if upload_success and st.session_state.get("forecast_running", False):
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
 
-
     # Pastikan kolom Source ada
     if "Source" not in final_df.columns:
         # Semua data sebelum start_datetime = Historical, setelah = Forecast
@@ -495,38 +495,46 @@ if upload_success and st.session_state.get("forecast_running", False):
     forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
     forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
 
-    for i, idx in enumerate(forecast_indices, start=1):
-        progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
-        X_forecast = pd.DataFrame(columns=model_features, index=[0])
-
-        for f in model_features:
-            if "_Lag" in f:
-                base, lag_str = f.rsplit("_Lag", 1)
-                lag = int(lag_str)
-                lag_time = final_df.at[idx, "Datetime"] - pd.Timedelta(hours=lag)
-                # Ambil nilai dari final_df, gunakan forward-fill jika tidak ada
-                if base in final_df.columns:
-                    val = final_df.loc[final_df["Datetime"] == lag_time, base]
-                    if not val.empty:
-                        X_forecast.at[0, f] = val.values[0]
-                    else:
-                        # fallback: ambil nilai terakhir historical
-                        X_forecast.at[0, f] = final_df.loc[final_df["Source"]=="Historical", base].ffill().iloc[-1]
-                else:
-                    X_forecast.at[0, f] = 0
-
-        # pastikan tipe float
-        X_forecast = X_forecast.astype(float)
-
-        # prediksi
-        y_hat = model.predict(X_forecast)[0]
-        if y_hat < 0: y_hat = 0
-        final_df.at[idx,"Water_level"] = round(y_hat,2)
-
+    # Pastikan kolom Source ada
+    if "Source" not in final_df.columns:
+        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+    
+    # Jumlah jam forecast
+    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
+    forecast_hours = forecast_mask.sum()
+    
+    for h in range(forecast_hours):
+        next_datetime = start_datetime + timedelta(hours=h)
+        
+        # Ambil window terakhir untuk semua fitur
+        last_window = final_df[model_features].iloc[-window_size:].values
+        
+        # Scaling
+        last_window_scaled = scaler_X.transform(last_window)
+        
+        # Bentuk 3D array (samples, timesteps, model_features)
+        X_seq = last_window_scaled.reshape(1, window_size, len(model_features))
+        
+        # Prediksi LSTM
+        y_hat_scaled = model.predict(X_seq)
+        y_hat = scaler_y.inverse_transform(y_hat_scaled)[0,0]
+        if y_hat < 0: 
+            y_hat = 0
+        
+        # Masukkan hasil ke final_df
+        new_row = {col: 0 for col in final_df.columns}  # buat row kosong
+        new_row.update({
+            "Datetime": next_datetime,
+            "Water_level": round(y_hat,2),
+            "Source": "Forecast"
+        })
+        final_df = pd.concat([final_df, pd.DataFrame([new_row])], ignore_index=True)
+        
+        # Update progress
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
-
-
+    
+    # Simpan hasil ke session
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
