@@ -444,7 +444,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Semua data sebelum start_datetime = Historical, setelah = Forecast
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
 
-forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
+    forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
 
     for i, idx in enumerate(forecast_indices, start=1):
         progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
