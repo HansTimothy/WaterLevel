@@ -408,7 +408,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         # --- Batasi waktu ---
         combined_df = combined_df[
             (combined_df["Datetime"] >= start_datetime - timedelta(hours=96)) &
-            (combined_df["Datetime"] <= start_datetime + timedelta(hours=168))
+            (combined_df["Datetime"] < start_datetime + timedelta(hours=168))
         ]
 
         # Ganti nama kolom jadi prefiks region (T_, SL_, dst)
