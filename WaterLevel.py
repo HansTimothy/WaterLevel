@@ -471,12 +471,12 @@ if upload_success and st.session_state.get("forecast_running", False):
 
             # Ambil nilai lag dari final_df
             if base in final_df.columns:
-                hist_values = final_df.loc[final_df["Source"]=="Historical", base]
-                # Jika lag lebih besar dari panjang historical, ambil value pertama
-                if idx-lag >= 0:
-                    X_forecast.at[0,f] = final_df.iloc[idx-lag].get(base, 0)
+                lag_index = idx - lag
+                if lag_index >= 0:
+                    X_forecast.at[0,f] = final_df.iloc[lag_index].get(base, 0)
                 else:
-                    X_forecast.at[0,f] = hist_values.iloc[0]
+                    # kalau lag lebih besar dari panjang historical, ambil nilai pertama historical
+                    X_forecast.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[0]
             else:
                 # fallback jika kolom tidak ada
                 X_forecast.at[0,f] = 0
@@ -530,7 +530,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         # Hitung RMSE antara data historis terakhir dan forecast awal (jika ada data aktual)
         if not fore_df.empty:
             # Contoh nilai RMSE, bisa kamu ubah kalau mau dinamis
-            rmse = 0.05  
+            rmse = 0.04  
         
             last_val = hist_df["Water_level"].iloc[-1]
             forecast_x = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), fore_df["Datetime"]])
@@ -550,7 +550,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                 line=dict(color="rgba(255,165,0,0)"),
                 hoverinfo="skip",
                 showlegend=True,
-                name="±RMSE 0.05m"
+                name="±RMSE 0.04m"
             ))
         
             # Tambah garis forecast
