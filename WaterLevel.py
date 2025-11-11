@@ -13,6 +13,9 @@ import plotly.graph_objects as go
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 
+scaler_X = joblib.load("scaler_X.pkl") 
+scaler_y = joblib.load("scaler_y.pkl")
+
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
@@ -441,10 +444,25 @@ if upload_success and st.session_state.get("forecast_running", False):
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
 
+    def create_lag_features(df, cols, max_lag=95):
+        for col in cols:
+            for lag in range(1, max_lag+1):
+                df[f"{col}_Lag{lag}"] = df[col].shift(lag)
+        return df
+    
+    lag_cols = [
+        "Water_level",
+        "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
+        "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
+        "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
+        "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure"
+    ]
+    
+    final_df = create_lag_features(final_df, lag_cols, max_lag=95)
+    final_df.fillna(method='bfill', inplace=True)  # isi NaN awal
+    
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
-    # Gunakan urutan manual fitur
-    # model_features = model.get_booster().feature_names
     model_features = []
 
     # T_ group
