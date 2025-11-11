@@ -408,10 +408,12 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Ganti nama kolom jadi prefiks region (T_, SL_, dst)
         rename_map = {
             "Relative_humidity": f"{region_name}Relative_humidity",
-            "Rainfall": f"{region_name}Rainfall",
+            # "Rainfall": f"{region_name}Rainfall",  <-- skip untuk MB_
             "Cloud_cover": f"{region_name}Cloud_cover",
             "Surface_pressure": f"{region_name}Surface_pressure",
         }
+        if region_name != "MB_":
+            rename_map["Rainfall"] = f"{region_name}Rainfall"
         combined_df.rename(columns=rename_map, inplace=True)
 
         # Merge ke tabel utama
