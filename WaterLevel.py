@@ -168,7 +168,7 @@ multi_points = {
 
 # Variabel cuaca yang kita ambil dari API
 # (nama sesuai dengan Open-Meteo fields)
-climate_vars = ["relativehumidity_2m", "precipitation", "cloud_cover", "surface_pressure"]
+climate_vars = ["relative_humidity_2m", "precipitation", "cloud_cover", "surface_pressure"]
 
 # -----------------------------
 # Fungsi bantu: fetch per-lokasi (historical)
@@ -192,7 +192,7 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={latitudes}&longitude={longitudes}"
         f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-        "&hourly=relativehumidity_2m, precipitation,cloud_cover,surface_pressure"
+        "&hourly=relative_humidity_2m, precipitation,cloud_cover,surface_pressure"
         "&timezone=Asia%2FBangkok"
     )
 
@@ -247,7 +247,7 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
 
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted.rename(columns={
-        "relativehumidity_2m": "Relative_humidity",
+        "relative_humidity_2m": "Relative_humidity",
         "precipitation": "Rainfall",
         "cloud_cover": "Cloud_cover",
         "surface_pressure": "Surface_pressure"
@@ -270,7 +270,7 @@ def fetch_forecast_multi_region(region_name, region_points):
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={latitudes}&longitude={longitudes}"
-        "&hourly=relativehumidity_2m, precipitation,cloud_cover,surface_pressure"
+        "&hourly=relative_humidity_2m, precipitation,cloud_cover,surface_pressure"
         "&forecast_days=16&timezone=Asia%2FBangkok"
     )
 
@@ -321,7 +321,7 @@ def fetch_forecast_multi_region(region_name, region_points):
 
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted.rename(columns={
-        "relativehumidity_2m": "Relative_humidity",
+        "relative_humidity_2m": "Relative_humidity",
         "precipitation": "Rainfall",
         "cloud_cover": "Cloud_cover",
         "surface_pressure": "Surface_pressure"
