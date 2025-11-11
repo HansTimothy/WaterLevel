@@ -10,14 +10,33 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+
+# ============================
+# Parameters (samakan dengan saat training)
+# ============================
+window_size = 24   # jumlah lag / timesteps
+n_features = X_train.shape[2]  # jumlah fitur input saat training
+units1 = 64
+units2 = 32
+dropout_rate = 0.2
+
+# ============================
+# Rebuild LSTM model
+# ============================
+model = Sequential()
+model.add(LSTM(units1, input_shape=(window_size, n_features), return_sequences=True))
+model.add(Dropout(dropout_rate))
+model.add(LSTM(units2))
+model.add(Dense(1))
+
+# Load bobot
+model.load_weights("lstm_waterlevel_weights.h5")
 
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
-model = load_model("lstm_waterlevel_model.h5")
-scaler_X = joblib.load("scaler_X.pkl")
-scaler_y = joblib.load("scaler_y.pkl")
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
@@ -499,38 +518,40 @@ if upload_success and st.session_state.get("forecast_running", False):
     if "Source" not in final_df.columns:
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
     
-    # Jumlah jam forecast
-    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
-    forecast_hours = forecast_mask.sum()
+    # Tentukan forecast horizon
+    forecast_hours = 168  # 7 hari * 24 jam
     
     for h in range(forecast_hours):
         next_datetime = start_datetime + timedelta(hours=h)
-        
-        # Ambil window terakhir untuk semua fitur
+    
+        # Ambil window terakhir sesuai window_size dan semua fitur
         last_window = final_df[model_features].iloc[-window_size:].values
-        
-        # Scaling
+    
+        # Scaling fitur
         last_window_scaled = scaler_X.transform(last_window)
-        
-        # Bentuk 3D array (samples, timesteps, model_features)
+    
+        # Bentuk array 3D untuk LSTM: (samples, timesteps, features)
         X_seq = last_window_scaled.reshape(1, window_size, len(model_features))
-        
+    
         # Prediksi LSTM
-        y_hat_scaled = model.predict(X_seq)
-        y_hat = scaler_y.inverse_transform(y_hat_scaled)[0,0]
-        if y_hat < 0: 
-            y_hat = 0
-        
-        # Masukkan hasil ke final_df
-        new_row = {col: 0 for col in final_df.columns}  # buat row kosong
+        y_hat_scaled = model.predict(X_seq, verbose=0)
+        y_hat = scaler_y.inverse_transform(y_hat_scaled)[0, 0]
+    
+        # Pastikan nilai Water_level >= 0
+        y_hat = max(0, y_hat)
+    
+        # Buat row baru untuk hasil forecast
+        new_row = {col: 0 for col in final_df.columns}  # row kosong
         new_row.update({
             "Datetime": next_datetime,
-            "Water_level": round(y_hat,2),
+            "Water_level": round(y_hat, 2),
             "Source": "Forecast"
         })
+    
+        # Append ke final_df
         final_df = pd.concat([final_df, pd.DataFrame([new_row])], ignore_index=True)
-        
-        # Update progress
+    
+        # Update progress bar
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
     
