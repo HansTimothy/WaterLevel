@@ -359,7 +359,7 @@ def fetch_forecast_multi_region(region_name, region_points):
 
 
 # -----------------------------
-# Wrapper: proses setiap region berurutan, tampilkan progres, dan merge dengan wl_hourly
+# Wrapper: proses setiap region berurutan dan merge jadi satu wide table
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
 if "forecast_done" not in st.session_state:
@@ -375,155 +375,70 @@ if run_forecast:
 
 if upload_success and st.session_state.get("forecast_running", False):
     progress_container = st.empty()
-
     total_forecast_hours = 168
-    # steps: for each region we do 2 fetches (hist + fore), plus 3 main steps (keperluan merge/finish) and forecast horizon steps kept for parity
     total_steps = len(multi_points) * 2 + 3 + total_forecast_hours
     step_counter = 0
     progress_bar = st.progress(0.0)
 
-    # kita akan mengumpulkan semua region final_df di list
-    region_final_list = []
+    # kita akan gabungkan hasil semua region secara wide
+    merged_wide = wl_hourly.copy()
+    if "time" in merged_wide.columns:
+        merged_wide.rename(columns={"time": "Datetime"}, inplace=True)
+    merged_wide["Datetime"] = pd.to_datetime(merged_wide["Datetime"])
 
-    # untuk tiap region: fetch hist + forecast, merge dengan wl_hourly, lalu append region_final
     for region_name, region_points in multi_points.items():
         region_label = region_labels.get(region_name, region_name)
+        progress_container.markdown(f"📘 Fetching data for **{region_label}** ...")
 
-        # 1) Fetch historical untuk region
-        progress_container.markdown(f"📘 Fetching historical for **{region_label}** ...")
+        # Fetch historical
         hist_df = fetch_historical_multi_region(region_name, region_points,
                                                start_datetime - timedelta(hours=96),
                                                start_datetime)
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
-        # 2) Fetch forecast untuk region
-        progress_container.markdown(f"🌤️ Fetching forecast for **{region_label}** ...")
+        # Fetch forecast
         fore_df = fetch_forecast_multi_region(region_name, region_points)
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
-        # 3) Merge wl_hourly dengan historical (if available)
-        progress_container.markdown(f"🔗 Merging water level with climate (Historical) for **{region_label}** ...")
-        # Ensure Datetime columns
-        hist = hist_df.copy() if (hist_df is not None and not hist_df.empty) else pd.DataFrame()
-        fore = fore_df.copy() if (fore_df is not None and not fore_df.empty) else pd.DataFrame()
+        # Gabungkan historical + forecast jadi satu (Datetime + var)
+        combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
+        if combined_df.empty:
+            st.warning(f"{region_label}: no data returned.")
+            continue
+        combined_df["Datetime"] = pd.to_datetime(combined_df["Datetime"])
+        combined_df.sort_values("Datetime", inplace=True)
 
-        # rename time -> Datetime if necessary already handled in fetch funcs
-        if "Datetime" not in hist.columns and "time" in hist.columns:
-            hist.rename(columns={"time": "Datetime"}, inplace=True)
-        if "Datetime" not in fore.columns and "time" in fore.columns:
-            fore.rename(columns={"time": "Datetime"}, inplace=True)
+        # Hapus duplikat waktu (kalau ada overlap hist/forecast)
+        combined_df = combined_df.drop_duplicates(subset=["Datetime"], keep="last")
 
-        # convert types
-        if "Datetime" in wl_hourly.columns:
-            wl_copy = wl_hourly.copy()
-        else:
-            wl_copy = wl_hourly.copy()
-            if "time" in wl_copy.columns:
-                wl_copy.rename(columns={"time": "Datetime"}, inplace=True)
-        wl_copy["Datetime"] = pd.to_datetime(wl_copy["Datetime"])
+        # Ganti nama kolom jadi prefiks region (T_, SL_, dst)
+        rename_map = {
+            "Relative_humidity": f"{region_name}Relative_humidity",
+            "Rainfall": f"{region_name}Rainfall",
+            "Cloud_cover": f"{region_name}Cloud_cover",
+            "Surface_pressure": f"{region_name}Surface_pressure",
+        }
+        combined_df.rename(columns=rename_map, inplace=True)
 
-        if not hist.empty:
-            hist["Datetime"] = pd.to_datetime(hist["Datetime"])
-            merged_hist = pd.merge(wl_copy, hist, on="Datetime", how="left").sort_values("Datetime")
-            merged_hist["Source"] = "Historical"
-        else:
-            merged_hist = wl_copy.copy()
-            merged_hist["Relative_humidity"] = np.nan
-            merged_hist["Rainfall"] = np.nan
-            merged_hist["Cloud_cover"] = np.nan
-            merged_hist["Surface_pressure"] = np.nan
-            merged_hist["Region"] = region_label
-            merged_hist["Source"] = "Historical"
-
-        # 4) Merge forecast: create forecast timeline (same for all regions) and merge region forecast
-        progress_container.markdown(f"🔗 Merging water level placeholder with climate (Forecast) for **{region_label}** ...")
-        forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
-        forecast_df_timeline = pd.DataFrame({"Datetime": forecast_hours})
-        forecast_df_timeline["Datetime"] = pd.to_datetime(forecast_df_timeline["Datetime"])
-
-        if not fore.empty:
-            fore["Datetime"] = pd.to_datetime(fore["Datetime"])
-            forecast_merged = pd.merge(forecast_df_timeline, fore, on="Datetime", how="left")
-            forecast_merged["Water_level"] = np.nan
-        else:
-            forecast_merged = forecast_df_timeline.copy()
-            forecast_merged["Relative_humidity"] = np.nan
-            forecast_merged["Rainfall"] = np.nan
-            forecast_merged["Cloud_cover"] = np.nan
-            forecast_merged["Surface_pressure"] = np.nan
-            forecast_merged["Water_level"] = np.nan
-
-        forecast_merged["Source"] = "Forecast"
-        forecast_merged["Region"] = region_label
-
-        # Ensure Region column in merged_hist
-        if "Region" not in merged_hist.columns:
-            merged_hist["Region"] = region_label
-
-        # Select & unify columns
-        cols_needed = ["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure", "Water_level", "Source"]
-        # add missing columns to merged_hist/forecast_merged
-        for c in cols_needed:
-            if c not in merged_hist.columns:
-                merged_hist[c] = np.nan
-            if c not in forecast_merged.columns:
-                forecast_merged[c] = np.nan
-
-        # combine for this region
-        region_final = pd.concat([merged_hist[cols_needed], forecast_merged[cols_needed]], ignore_index=True).sort_values("Datetime")
-        # round numeric
-        region_final = region_final.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
-        region_final_list.append(region_final)
-
-        # update progress a bit
+        # Merge ke tabel utama
+        merged_wide = pd.merge(
+            merged_wide, 
+            combined_df[["Datetime"] + list(rename_map.values())],
+            on="Datetime", how="outer"
+        )
         step_counter += 1
         progress_bar.progress(min(step_counter / total_steps, 1.0))
 
-    # akhir loop region
-    if region_final_list:
-        # Gabungkan semua region jadi satu dataframe panjang
-        final_df = pd.concat(region_final_list, ignore_index=True).sort_values(["Region", "Datetime"])
-    
-        # -----------------------------
-        # 🔄 Ubah dari long ke wide (kolom per region)
-        # -----------------------------
-        prefix_map = {
-            "Tuhup": "T",
-            "Sungai Laung": "SL",
-            "Muara Bumban": "MB",
-            "Muara Untu": "MU"
-        }
-    
-        # Pivot per Region → tiap variabel jadi kolom dengan prefix region
-        pivot_df = final_df.pivot_table(
-            index="Datetime",
-            columns="Region",
-            values=["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure", "Water_level"]
-        )
-    
-        # Gabungkan multiindex kolom → "T_Rainfall", "SL_Rainfall", dst.
-        pivot_df.columns = [
-            f"{prefix_map.get(region, region)}_{var}"
-            for var, region in pivot_df.columns
-        ]
-    
-        pivot_df = pivot_df.reset_index().sort_values("Datetime")
-    
-        # Simpan hasil ke session_state
-        st.session_state["final_df"] = pivot_df
-    else:
-        final_df = pd.DataFrame()
-        st.session_state["final_df"] = final_df
-    
-    # -----------------------------
-    # Tandai proses selesai
-    # -----------------------------
-    st.session_state["forecast_running"] = False
+    # urutkan dan rapikan
+    merged_wide = merged_wide.sort_values("Datetime")
+    merged_wide = merged_wide.round(2)
+    st.session_state["final_df"] = merged_wide
     st.session_state["forecast_done"] = True
-    
-    progress_container.markdown("✅ Forecast processing complete for all locations.")
+    st.session_state["forecast_running"] = False
+
+    progress_container.empty()
     progress_bar.progress(1.0)
 
     # 4️⃣ Iterative forecast
