@@ -10,3 +10,4 @@ XlsxWriter
 openpyxl
 reportlab
 scipy
+tensorflow>=2.13.0
