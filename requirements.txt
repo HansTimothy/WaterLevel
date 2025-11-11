@@ -2,10 +2,12 @@ streamlit
 pandas 
 numpy 
 scikit-learn 
-xgboost joblib 
+xgboost 
+joblib 
 plotly 
 pytz 
 XlsxWriter 
 openpyxl 
 reportlab 
 scipy
+
