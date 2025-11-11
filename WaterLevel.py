@@ -16,6 +16,26 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 scaler_X = joblib.load("scaler_X.pkl") 
 scaler_y = joblib.load("scaler_y.pkl")
 
+# ============================
+# Parameters (samakan dengan saat training)
+# ============================
+units = 128
+dropout_rate = 0.3
+window_size = 24  # sama seperti saat training
+n_features = 725
+
+# ============================
+# Rebuild LSTM model
+# ============================
+model = Sequential()
+model.add(LSTM(units, input_shape=(window_size, n_features), return_sequences=True))
+model.add(Dropout(dropout_rate))
+model.add(LSTM(units // 2))
+model.add(Dense(1))
+
+# Load bobot
+model.load_weights("lstm_waterlevel_weights.h5")
+
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
@@ -502,26 +522,6 @@ if upload_success and st.session_state.get("forecast_running", False):
     # Water_level_ group
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
-
-    # ============================
-    # Parameters (samakan dengan saat training)
-    # ============================
-    units = 128
-    dropout_rate = 0.3
-    window_size = 24  # sama seperti saat training
-    n_features = len(model_features)  # pastikan sama jumlah fitur input
-    
-    # ============================
-    # Rebuild LSTM model
-    # ============================
-    model = Sequential()
-    model.add(LSTM(units, input_shape=(window_size, n_features), return_sequences=True))
-    model.add(Dropout(dropout_rate))
-    model.add(LSTM(units // 2))
-    model.add(Dense(1))
-    
-    # Load bobot
-    model.load_weights("lstm_waterlevel_weights.h5")
 
     # Pastikan kolom Source ada
     if "Source" not in final_df.columns:
