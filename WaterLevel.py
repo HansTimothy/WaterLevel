@@ -10,14 +10,11 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
-from tensorflow.keras.models import load_model
 
-# Load model & scaler
-model = load_model("best_LSTM_model.keras", compile=False)
-scaler_X = joblib.load("scaler_X.pkl")
-scaler_y = joblib.load("scaler_y.pkl")
-feature_cols = joblib.load("feature_names.pkl") 
-window_size = 24  # harus sama dengan waktu training
+# -----------------------------
+# Load trained XGB model
+# -----------------------------
+model = joblib.load("xgb_waterlevel_hourly_model_2.pkl")
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
@@ -449,6 +446,8 @@ if upload_success and st.session_state.get("forecast_running", False):
     # model_features = model.get_booster().feature_names
     model_features = []
 
+    model_features = []
+
     # T_ group
     for i in range(61, 96):
         model_features.append(f"T_Relative_humidity_Lag{i}")
@@ -490,69 +489,48 @@ if upload_success and st.session_state.get("forecast_running", False):
 
     # Pastikan kolom Source ada
     if "Source" not in final_df.columns:
+        # Semua data sebelum start_datetime = Historical, setelah = Forecast
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
-    
-    # Urutkan waktu
-    final_df = final_df.sort_values("Datetime").reset_index(drop=True)
-    
-    # Pastikan semua kolom fitur ada
-    for col in feature_cols:
-        if col not in final_df.columns:
-            final_df[col] = 0.0
-    
-    # Pastikan tipe data benar
-    final_df[feature_cols] = final_df[feature_cols].astype(float)
-    final_df["Water_level"] = final_df["Water_level"].astype(float)
-    
-    # Ambil window historis sebelum waktu forecast dimulai
-    hist_window = final_df[final_df["Datetime"] < start_datetime].tail(window_size)
-    X_input = hist_window[feature_cols].values
-    y_input = hist_window["Water_level"].values.reshape(-1, 1)
-    
-    # Scale input & output sesuai scaler training
-    X_input_scaled = scaler_X.transform(X_input)
-    y_input_scaled = scaler_y.transform(y_input)
-    
-    # Bentuk sequence (3D array)
-    X_seq = X_input_scaled.reshape(1, window_size, len(feature_cols))
-    
-    # Siapkan list untuk hasil prediksi
-    predictions = []
-    forecast_datetimes = pd.date_range(start=start_datetime, periods=168, freq="H")
-    
-    # Iterative forecasting
-    for step, dt in enumerate(forecast_datetimes, start=1):
-        progress_container.markdown(f"Predicting hour {step}/168...")
-    
-        # Prediksi 1 jam ke depan
-        y_pred_scaled = model.predict(X_seq, verbose=0)
-        y_pred = scaler_y.inverse_transform(y_pred_scaled)[0, 0]
-        if y_pred < 0: 
-            y_pred = 0
-        predictions.append(round(float(y_pred), 3))
-    
-        # Siapkan fitur untuk jam berikutnya
-        if dt in list(final_df["Datetime"]):
-            next_features = final_df.loc[final_df["Datetime"] == dt, feature_cols].values[0]
-        else:
-            next_features = X_input[-1]  # fallback kalau fitur belum ada
-    
-        next_features_scaled = scaler_X.transform(next_features.reshape(1, -1))[0]
-        X_seq = np.append(X_seq[:, 1:, :], [[next_features_scaled]], axis=1)
-    
-        # Update progress bar
-        progress_bar.progress(min(step / 168, 1.0))
-    
-    # Masukkan hasil ke dataframe
-    for dt, pred in zip(forecast_datetimes, predictions):
-        final_df.loc[final_df["Datetime"] == dt, "Water_level"] = pred
-        final_df.loc[final_df["Datetime"] == dt, "Source"] = "Forecast"
-    
-    # Simpan hasil forecast ke session state
+
+    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
+    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
+
+    for i, idx in enumerate(forecast_indices, start=1):
+        progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
+        X_forecast = pd.DataFrame(columns=model_features, index=[0])
+
+        for f in model_features:
+            if "_Lag" in f:
+                base, lag_str = f.rsplit("_Lag", 1)
+                lag = int(lag_str)
+                lag_time = final_df.at[idx, "Datetime"] - pd.Timedelta(hours=lag)
+                # Ambil nilai dari final_df, gunakan forward-fill jika tidak ada
+                if base in final_df.columns:
+                    val = final_df.loc[final_df["Datetime"] == lag_time, base]
+                    if not val.empty:
+                        X_forecast.at[0, f] = val.values[0]
+                    else:
+                        # fallback: ambil nilai terakhir historical
+                        X_forecast.at[0, f] = final_df.loc[final_df["Source"]=="Historical", base].ffill().iloc[-1]
+                else:
+                    X_forecast.at[0, f] = 0
+
+        # pastikan tipe float
+        X_forecast = X_forecast.astype(float)
+
+        # prediksi
+        y_hat = model.predict(X_forecast)[0]
+        if y_hat < 0: y_hat = 0
+        final_df.at[idx,"Water_level"] = round(y_hat,2)
+
+        step_counter += 1
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+
+
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
-    progress_container.markdown("✅ 7-Day LSTM Water Level Forecast Completed!")
+    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
     
 # -----------------------------
