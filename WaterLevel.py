@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 from tensorflow.keras.models import load_model
 
 # Load model & scaler
-model = load_model("best_LSTM_Model.h5")
+model = load_model("Best_LSTM_Model.h5")
 scaler_X = joblib.load("scaler_X.pkl")
 scaler_y = joblib.load("scaler_y.pkl")
 feature_cols = joblib.load("feature_names.pkl") 
