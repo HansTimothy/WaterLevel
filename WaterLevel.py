@@ -13,27 +13,6 @@ import plotly.graph_objects as go
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 
-# ============================
-# Parameters (samakan dengan saat training)
-# ============================
-window_size = 24   # jumlah lag / timesteps
-n_features = X_train.shape[2]  # jumlah fitur input saat training
-units1 = 64
-units2 = 32
-dropout_rate = 0.2
-
-# ============================
-# Rebuild LSTM model
-# ============================
-model = Sequential()
-model.add(LSTM(units1, input_shape=(window_size, n_features), return_sequences=True))
-model.add(Dropout(dropout_rate))
-model.add(LSTM(units2))
-model.add(Dense(1))
-
-# Load bobot
-model.load_weights("lstm_waterlevel_weights.h5")
-
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
@@ -506,6 +485,27 @@ if upload_success and st.session_state.get("forecast_running", False):
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
 
+    # ============================
+    # Parameters (samakan dengan saat training)
+    # ============================
+    window_size = 24   # jumlah lag / timesteps
+    n_features = len(model_features)
+    units1 = 64
+    units2 = 32
+    dropout_rate = 0.2
+    
+    # ============================
+    # Rebuild LSTM model
+    # ============================
+    model = Sequential()
+    model.add(LSTM(units1, input_shape=(window_size, n_features), return_sequences=True))
+    model.add(Dropout(dropout_rate))
+    model.add(LSTM(units2))
+    model.add(Dense(1))
+    
+    # Load bobot
+    model.load_weights("lstm_waterlevel_weights.h5")
+
     # Pastikan kolom Source ada
     if "Source" not in final_df.columns:
         # Semua data sebelum start_datetime = Historical, setelah = Forecast
@@ -532,7 +532,7 @@ if upload_success and st.session_state.get("forecast_running", False):
     
         # Bentuk array 3D untuk LSTM: (samples, timesteps, features)
         X_seq = last_window_scaled.reshape(1, window_size, len(model_features))
-    
+
         # Prediksi LSTM
         y_hat_scaled = model.predict(X_seq, verbose=0)
         y_hat = scaler_y.inverse_transform(y_hat_scaled)[0, 0]
