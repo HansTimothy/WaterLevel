@@ -378,7 +378,7 @@ if upload_success and st.session_state.get("forecast_running", False):
 
     for region_name, region_points in multi_points.items():
         region_label = region_labels.get(region_name, region_name)
-        progress_container.markdown(f"📘 Fetching data for **{region_label}** ...")
+        progress_container.markdown(f"Fetching data for **{region_label}** ...")
 
         # Fetch historical
         hist_df = fetch_historical_multi_region(region_name, region_points,
@@ -424,6 +424,9 @@ if upload_success and st.session_state.get("forecast_running", False):
     # urutkan dan rapikan
     merged_wide = merged_wide.sort_values("Datetime")
     merged_wide = merged_wide.round(2)
+
+    final_df = merged_wide.copy()
+    
     st.session_state["final_df"] = merged_wide
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
@@ -436,7 +439,12 @@ if upload_success and st.session_state.get("forecast_running", False):
     # Gunakan urutan manual fitur
     model_features = model.get_booster().feature_names
 
-    forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
+    # Pastikan kolom Source ada
+    if "Source" not in final_df.columns:
+        # Semua data sebelum start_datetime = Historical, setelah = Forecast
+        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+
+forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
 
     for i, idx in enumerate(forecast_indices, start=1):
         progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
