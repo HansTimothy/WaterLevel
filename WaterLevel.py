@@ -203,9 +203,17 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching historical: {e}")
         return pd.DataFrame()
 
-    if not isinstance(data, list) or len(data) != len(region_points):
-        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected historical response.")
+    # Pastikan data berupa list of dicts
+    if isinstance(data, dict):
+        data = [data]
+    elif not isinstance(data, list):
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected historical response format.")
         return pd.DataFrame()
+    
+    # Jika jumlah titik tidak cocok, potong agar sesuai panjang region_points
+    if len(data) != len(region_points):
+        st.info(f"[{region_labels.get(region_name, region_name)}] Adjusting historical response length ({len(data)} vs {len(region_points)}).")
+        data = data[:len(region_points)]
 
     all_dfs = []
     for i, (dir_name, info) in enumerate(region_points.items()):
@@ -281,9 +289,17 @@ def fetch_forecast_multi_region(region_name, region_points):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching forecast: {e}")
         return pd.DataFrame()
 
-    if not isinstance(data, list) or len(data) != len(region_points):
-        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected forecast response.")
+    # Pastikan data berupa list of dicts
+    if isinstance(data, dict):
+        data = [data]
+    elif not isinstance(data, list):
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected forecast response format.")
         return pd.DataFrame()
+    
+    # Jika jumlah titik tidak cocok, potong agar sesuai panjang region_points
+    if len(data) != len(region_points):
+        st.info(f"[{region_labels.get(region_name, region_name)}] Adjusting forecast response length ({len(data)} vs {len(region_points)}).")
+        data = data[:len(region_points)]
 
     all_dfs = []
     for i, (dir_name, info) in enumerate(region_points.items()):
