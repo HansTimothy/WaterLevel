@@ -488,19 +488,18 @@ if upload_success and st.session_state.get("forecast_running", False):
     # ============================
     # Parameters (samakan dengan saat training)
     # ============================
-    window_size = 24   # jumlah lag / timesteps
-    n_features = len(model_features)
-    units1 = 64
-    units2 = 32
-    dropout_rate = 0.2
+    units = 128
+    dropout_rate = 0.3
+    window_size = 24  # sama seperti saat training
+    n_features = len(model_features)  # pastikan sama jumlah fitur input
     
     # ============================
     # Rebuild LSTM model
     # ============================
     model = Sequential()
-    model.add(LSTM(units1, input_shape=(window_size, n_features), return_sequences=True))
+    model.add(LSTM(units, input_shape=(window_size, n_features), return_sequences=True))
     model.add(Dropout(dropout_rate))
-    model.add(LSTM(units2))
+    model.add(LSTM(units // 2))
     model.add(Dense(1))
     
     # Load bobot
