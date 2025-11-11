@@ -443,7 +443,49 @@ if upload_success and st.session_state.get("forecast_running", False):
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
     # Gunakan urutan manual fitur
-    model_features = model.get_booster().feature_names
+    # model_features = model.get_booster().feature_names
+    model_features = []
+
+    model_features = []
+
+    # T_ group
+    for i in range(61, 96):
+        model_features.append(f"T_Relative_humidity_Lag{i}")
+    for i in range(82, 95):
+        model_features.append(f"T_Rainfall_Lag{i}")
+    for i in range(1, 96):
+        model_features.append(f"T_Cloud_cover_Lag{i}")
+    for i in range(54, 72):
+        model_features.append(f"T_Surface_pressure_Lag{i}")
+    
+    # SL_ group
+    for i in range(50, 96):
+        model_features.append(f"SL_Relative_humidity_Lag{i}")
+    for i in range(1, 96):
+        model_features.append(f"SL_Cloud_cover_Lag{i}")
+    for i in range(54, 73):
+        model_features.append(f"SL_Surface_pressure_Lag{i}")
+    
+    # MB_ group
+    for i in range(44, 96):
+        model_features.append(f"MB_Relative_humidity_Lag{i}")
+    for i in range(1, 96):
+        model_features.append(f"MB_Cloud_cover_Lag{i}")
+    for i in range(56, 70):
+        model_features.append(f"MB_Surface_pressure_Lag{i}")
+    
+    # MU_ group
+    for i in range(59, 96):
+        model_features.append(f"MU_Relative_humidity_Lag{i}")
+    for i in range(1, 96):
+        model_features.append(f"MU_Cloud_cover_Lag{i}")
+    for i in range(55, 71):
+        model_features.append(f"MU_Surface_pressure_Lag{i}")
+    
+    # Water_level_ group
+    for i in range(1, 96):
+        model_features.append(f"Water_level_Lag{i}")
+
 
     # Pastikan kolom Source ada
     if "Source" not in final_df.columns:
