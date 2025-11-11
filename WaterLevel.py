@@ -166,9 +166,9 @@ multi_points = {
              "SE":{"lat":-1.72232, "lon":115.50001, "weight":0.000630} },
 }
 
-# Variabel cuaca yang kita ambil dari API
-# (nama sesuai dengan Open-Meteo fields)
-climate_vars = ["relative_humidity_2m", "precipitation", "cloud_cover", "surface_pressure"]
+# Kolom numerik yang akan dipakai untuk perhitungan weighted average
+numeric_cols_hist = ["relative_humidity_2m", "precipitation", "cloud_cover", "surface_pressure"]
+numeric_cols_fore = ["relative_humidity_2m", "precipitation", "cloud_cover", "surface_pressure"]
 
 # -----------------------------
 # Fungsi bantu: fetch per-lokasi (historical)
