@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 # -----------------------------
 # Load trained XGB model
 # -----------------------------
-model = joblib.load("xgb_waterlevel_hourly_model_2.pkl")
+model = joblib.load("xgb_waterlevel_hourly_model.pkl")
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
