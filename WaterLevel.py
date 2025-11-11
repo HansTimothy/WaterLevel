@@ -173,278 +173,302 @@ climate_vars = ["relativehumidity_2m", "precipitation", "cloud_cover", "surface_
 # -----------------------------
 # Fungsi bantu: fetch per-lokasi (historical)
 # -----------------------------
-def fetch_historical_multi(start_dt, end_dt, show_warnings=True):
-    """
-    Kembalikan DataFrame berisi Datetime + kolom per-lokasi:
-    e.g. T_Relative_humidity, T_Rainfall, T_Cloud_cover, T_Surface_pressure, ...
-    """
-    results_per_location = {}
-    for loc_prefix, pts in multi_points.items():
-        dfs = []
-        for dir_name, meta in pts.items():
-            lat = meta["lat"]
-            lon = meta["lon"]
-            w = meta["weight"]
-            url = (
-                f"https://archive-api.open-meteo.com/v1/archive?"
-                f"latitude={lat}&longitude={lon}"
-                f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-                f"&hourly={','.join(climate_vars)}"
-                "&timezone=Asia%2FBangkok"
-            )
-            try:
-                resp = requests.get(url, timeout=60)
-                resp.raise_for_status()
-                data = resp.json()
-                if "hourly" not in data or data["hourly"] is None:
-                    if show_warnings:
-                        st.warning(f"[Historical] No hourly for {loc_prefix} {dir_name}")
-                    continue
-                df = pd.DataFrame(data["hourly"])
-                if "time" not in df.columns:
-                    if show_warnings:
-                        st.warning(f"[Historical] No time for {loc_prefix} {dir_name}")
-                    continue
-                # keep only columns we know exist
-                present = [c for c in climate_vars if c in df.columns]
-                df = df[["time"] + present].copy()
-                df["weight"] = w
-                df["direction"] = dir_name
-                dfs.append(df)
-            except Exception as e:
-                if show_warnings:
-                    st.warning(f"[Historical][{loc_prefix}][{dir_name}] request error: {e}")
-                continue
+# Nama lengkap region
+region_labels = {
+    "T_": "Tuhup",
+    "SL_": "Sungai Laung",
+    "MB_": "Muara Bumban",
+    "MU_": "Muara Untu"
+}
 
-        if len(dfs) == 0:
-            # kosong untuk lokasi ini
-            results_per_location[loc_prefix] = pd.DataFrame(columns=["Datetime"])
+# -----------------------------
+# Fungsi: historical per region
+# -----------------------------
+def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
+    latitudes = ",".join(str(pt["lat"]) for pt in region_points.values())
+    longitudes = ",".join(str(pt["lon"]) for pt in region_points.values())
+
+    url = (
+        f"https://archive-api.open-meteo.com/v1/archive?"
+        f"latitude={latitudes}&longitude={longitudes}"
+        f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
+        "&hourly=relativehumidity_2m, precipitation,cloud_cover,surface_pressure"
+        "&timezone=Asia%2FBangkok"
+    )
+
+    try:
+        resp = requests.get(url, timeout=60)
+        data = resp.json()
+    except Exception as e:
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching historical: {e}")
+        return pd.DataFrame()
+
+    if not isinstance(data, list) or len(data) != len(region_points):
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected historical response.")
+        return pd.DataFrame()
+
+    all_dfs = []
+    for i, (dir_name, info) in enumerate(region_points.items()):
+        loc_data = data[i]
+        df = pd.DataFrame(loc_data.get("hourly", {}))
+        if df.empty:
             continue
+        df["direction"] = dir_name
+        df["weight"] = info["weight"]
+        all_dfs.append(df)
 
-        df_all = pd.concat(dfs, ignore_index=True)
+    if not all_dfs:
+        return pd.DataFrame()
+
+    df_all = pd.concat(all_dfs, ignore_index=True)
+    # ensure time column
+    if "time" in df_all.columns:
         df_all["time"] = pd.to_datetime(df_all["time"])
+    else:
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No 'time' in historical hourly.")
+        return pd.DataFrame()
 
-        weighted_rows = []
-        group_cols = [c for c in climate_vars if c in df_all.columns]
-        for t, group in df_all.groupby("time"):
-            w_arr = group["weight"].values
-            row = {"Datetime": t}
-            for col in group_cols:
-                vals = group[col].astype(float).fillna(0).values
-                s = (w_arr * vals).sum()
-                row[col] = s
-            weighted_rows.append(row)
-
-        df_weighted = pd.DataFrame(weighted_rows)
-        rename_map = {
-            "relativehumidity_2m": f"{loc_prefix}Relative_humidity",
-            "precipitation":        f"{loc_prefix}Rainfall",
-            "cloud_cover":          f"{loc_prefix}Cloud_cover",
-            "surface_pressure":     f"{loc_prefix}Surface_pressure"
-        }
-        df_weighted.rename(columns=rename_map, inplace=True)
-        # bulatkan numeric (kecuali Datetime)
-        for c in df_weighted.columns:
-            if c != "Datetime":
-                df_weighted[c] = df_weighted[c].round(2)
-        results_per_location[loc_prefix] = df_weighted[["Datetime"] + [c for c in df_weighted.columns if c!="Datetime"]]
-
-    # Merge semua lokasi (outer join supaya tidak hilang jam)
-    merged = None
-    for loc_df in results_per_location.values():
-        if merged is None:
-            merged = loc_df.copy()
-        else:
-            merged = pd.merge(merged, loc_df, on="Datetime", how="outer")
-
-    if merged is None:
-        return pd.DataFrame(columns=["Datetime"])
-    merged = merged.sort_values("Datetime").reset_index(drop=True)
-    return merged
-
-# -----------------------------
-# Fungsi forecast (per-lokasi, forecast endpoint)
-# -----------------------------
-def fetch_forecast_multi(show_warnings=True):
-    """
-    Kembalikan DataFrame forecast dengan kolom-kolom prefix lokasi.
-    """
-    results_per_location = {}
-    for loc_prefix, pts in multi_points.items():
-        dfs = []
-        for dir_name, meta in pts.items():
-            lat = meta["lat"]
-            lon = meta["lon"]
-            w = meta["weight"]
-            url = (
-                f"https://api.open-meteo.com/v1/forecast?"
-                f"latitude={lat}&longitude={lon}"
-                f"&hourly={','.join(climate_vars)}"
-                "&forecast_days=16&timezone=Asia%2FBangkok"
-            )
-            try:
-                resp = requests.get(url, timeout=60)
-                resp.raise_for_status()
-                data = resp.json()
-                if "hourly" not in data or data["hourly"] is None:
-                    if show_warnings:
-                        st.warning(f"[Forecast] No hourly for {loc_prefix} {dir_name}")
-                    continue
-                df = pd.DataFrame(data["hourly"])
-                if "time" not in df.columns:
-                    if show_warnings:
-                        st.warning(f"[Forecast] No time for {loc_prefix} {dir_name}")
-                    continue
-                present = [c for c in climate_vars if c in df.columns]
-                df = df[["time"] + present].copy()
-                df["weight"] = w
-                df["direction"] = dir_name
-                dfs.append(df)
-            except Exception as e:
-                if show_warnings:
-                    st.warning(f"[Forecast][{loc_prefix}][{dir_name}] request error: {e}")
-                continue
-
-        if len(dfs) == 0:
-            results_per_location[loc_prefix] = pd.DataFrame(columns=["Datetime"])
+    # Weighted average per time
+    weighted_list = []
+    for time, group in df_all.groupby("time"):
+        w = group["weight"].values
+        # multiply each numeric col by weights and sum
+        try:
+            weighted_vals = (group[numeric_cols_hist].T * w).T.sum()
+        except Exception:
+            # if numeric cols missing, skip
             continue
+        row = weighted_vals.to_dict()
+        row["Datetime"] = time
+        weighted_list.append(row)
 
-        df_all = pd.concat(dfs, ignore_index=True)
-        df_all["time"] = pd.to_datetime(df_all["time"])
+    if not weighted_list:
+        return pd.DataFrame()
 
-        weighted_rows = []
-        group_cols = [c for c in climate_vars if c in df_all.columns]
-        for t, group in df_all.groupby("time"):
-            w_arr = group["weight"].values
-            row = {"Datetime": t}
-            for col in group_cols:
-                vals = group[col].astype(float).fillna(0).values
-                s = (w_arr * vals).sum()
-                row[col] = s
-            weighted_rows.append(row)
+    df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "relativehumidity_2m": "Relative_humidity",
+        "precipitation": "Rainfall",
+        "cloud_cover": "Cloud_cover",
+        "surface_pressure": "Surface_pressure"
+    }, inplace=True)
+    # round numeric
+    for c in ["Relative_humidity", "Rainfall", "Cloud_cover", "Soil_moisture"]:
+        if c in df_weighted.columns:
+            df_weighted[c] = df_weighted[c].round(2)
+    df_weighted["Region"] = region_labels.get(region_name, region_name)
+    return df_weighted[["Datetime", "Region", "Relative_humidity","Rainfall", "Cloud_cover", "Surface_pressure"]]
 
-        df_weighted = pd.DataFrame(weighted_rows)
-        rename_map = {
-            "relativehumidity_2m": f"{loc_prefix}Relative_humidity",
-            "precipitation":        f"{loc_prefix}Rainfall",
-            "cloud_cover":          f"{loc_prefix}Cloud_cover",
-            "surface_pressure":     f"{loc_prefix}Surface_pressure"
-        }
-        df_weighted.rename(columns=rename_map, inplace=True)
-        for c in df_weighted.columns:
-            if c != "Datetime":
-                df_weighted[c] = df_weighted[c].round(2)
-        results_per_location[loc_prefix] = df_weighted[["Datetime"] + [c for c in df_weighted.columns if c!="Datetime"]]
-
-    merged = None
-    for loc_df in results_per_location.values():
-        if merged is None:
-            merged = loc_df.copy()
-        else:
-            merged = pd.merge(merged, loc_df, on="Datetime", how="outer")
-
-    if merged is None:
-        return pd.DataFrame(columns=["Datetime"])
-    merged = merged.sort_values("Datetime").reset_index(drop=True)
-    return merged
 
 # -----------------------------
-# Run Forecast Button (Streamlit)
+# Fungsi: forecast per region
+# -----------------------------
+def fetch_forecast_multi_region(region_name, region_points):
+    latitudes = ",".join(str(pt["lat"]) for pt in region_points.values())
+    longitudes = ",".join(str(pt["lon"]) for pt in region_points.values())
+
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={latitudes}&longitude={longitudes}"
+        "&hourly=relativehumidity_2m, precipitation,cloud_cover,surface_pressure"
+        "&forecast_days=16&timezone=Asia%2FBangkok"
+    )
+
+    try:
+        resp = requests.get(url, timeout=60)
+        data = resp.json()
+    except Exception as e:
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching forecast: {e}")
+        return pd.DataFrame()
+
+    if not isinstance(data, list) or len(data) != len(region_points):
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected forecast response.")
+        return pd.DataFrame()
+
+    all_dfs = []
+    for i, (dir_name, info) in enumerate(region_points.items()):
+        loc_data = data[i]
+        df = pd.DataFrame(loc_data.get("hourly", {}))
+        if df.empty:
+            continue
+        df["direction"] = dir_name
+        df["weight"] = info["weight"]
+        all_dfs.append(df)
+
+    if not all_dfs:
+        return pd.DataFrame()
+
+    df_all = pd.concat(all_dfs, ignore_index=True)
+    if "time" in df_all.columns:
+        df_all["time"] = pd.to_datetime(df_all["time"])
+    else:
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No 'time' in forecast hourly.")
+        return pd.DataFrame()
+
+    weighted_list = []
+    for time, group in df_all.groupby("time"):
+        w = group["weight"].values
+        try:
+            weighted_vals = (group[numeric_cols_fore].T * w).T.sum()
+        except Exception:
+            continue
+        row = weighted_vals.to_dict()
+        row["Datetime"] = time
+        weighted_list.append(row)
+
+    if not weighted_list:
+        return pd.DataFrame()
+
+    df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "relativehumidity_2m": "Relative_humidity",
+        "precipitation": "Rainfall",
+        "cloud_cover": "Cloud_cover",
+        "surface_pressure": "Surface_pressure"
+    }, inplace=True)
+    for c in ["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]:
+        if c in df_weighted.columns:
+            df_weighted[c] = df_weighted[c].round(2)
+    df_weighted["Region"] = region_labels.get(region_name, region_name)
+    return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
+
+
+# -----------------------------
+# Wrapper: proses setiap region berurutan, tampilkan progres, dan merge dengan wl_hourly
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
-
-# Inisialisasi session_state
 if "forecast_done" not in st.session_state:
     st.session_state["forecast_done"] = False
     st.session_state["final_df"] = None
     st.session_state["forecast_running"] = False
 
-# Jika tombol diklik → trigger proses
 if run_forecast:
     st.session_state["forecast_done"] = False
     st.session_state["final_df"] = None
     st.session_state["forecast_running"] = True
+    st.rerun()
 
-
-# -----------------------------
-# Forecast Logic hanya jalan setelah klik tombol
-# -----------------------------
 if upload_success and st.session_state.get("forecast_running", False):
-
     progress_container = st.empty()
-    progress_bar = st.progress(0)
-    step_counter = 0
+
     total_forecast_hours = 168
-    total_steps = 3 + total_forecast_hours
+    # steps: for each region we do 2 fetches (hist + fore), plus 3 main steps (keperluan merge/finish) and forecast horizon steps kept for parity
+    total_steps = len(multi_points) * 2 + 3 + total_forecast_hours
+    step_counter = 0
+    progress_bar = st.progress(0.0)
 
-    try:
-        gmt7_now = datetime.utcnow() + timedelta(hours=7)
-        forecast_end = start_datetime + timedelta(hours=168)
+    # kita akan mengumpulkan semua region final_df di list
+    region_final_list = []
 
-        # 1️⃣ Fetch historical climate (4 hari sebelum start)
-        progress_container.markdown("Fetching 4-day historical climate data...")
-        climate_hist = fetch_historical_multi(start_datetime - timedelta(hours=96), start_datetime)
+    # untuk tiap region: fetch hist + forecast, merge dengan wl_hourly, lalu append region_final
+    for region_name, region_points in multi_points.items():
+        region_label = region_labels.get(region_name, region_name)
+
+        # 1) Fetch historical untuk region
+        progress_container.markdown(f"📘 Fetching historical for **{region_label}** ...")
+        hist_df = fetch_historical_multi_region(region_name, region_points,
+                                               start_datetime - timedelta(hours=96),
+                                               start_datetime)
         step_counter += 1
         progress_bar.progress(step_counter / total_steps)
 
-        # 2️⃣ Tentukan jenis data yang diambil untuk periode forecast
-        if start_datetime < gmt7_now:
-            if forecast_end <= gmt7_now:
-                # Semua periode masih di masa lalu → pakai historical semua
-                progress_container.markdown("Fetching full historical climate data (since selected time is in the past)...")
-                climate_forecast = fetch_historical_multi(start_datetime, forecast_end)
-            else:
-                # Kombinasi: sebagian masa lalu (historical) + masa depan (forecast)
-                progress_container.markdown("Fetching mixed climate data (historical + forecast)...")
-                climate_past = fetch_historical_multi(start_datetime, gmt7_now)
-                climate_future = fetch_forecast_multi()
-                # Gabungkan dua bagian
-                climate_forecast = pd.concat([climate_past, climate_future]).drop_duplicates(subset="Datetime").sort_values("Datetime").reset_index(drop=True)
+        # 2) Fetch forecast untuk region
+        progress_container.markdown(f"🌤️ Fetching forecast for **{region_label}** ...")
+        fore_df = fetch_forecast_multi_region(region_name, region_points)
+        step_counter += 1
+        progress_bar.progress(step_counter / total_steps)
+
+        # 3) Merge wl_hourly dengan historical (if available)
+        progress_container.markdown(f"🔗 Merging water level with climate (Historical) for **{region_label}** ...")
+        # Ensure Datetime columns
+        hist = hist_df.copy() if (hist_df is not None and not hist_df.empty) else pd.DataFrame()
+        fore = fore_df.copy() if (fore_df is not None and not fore_df.empty) else pd.DataFrame()
+
+        # rename time -> Datetime if necessary already handled in fetch funcs
+        if "Datetime" not in hist.columns and "time" in hist.columns:
+            hist.rename(columns={"time": "Datetime"}, inplace=True)
+        if "Datetime" not in fore.columns and "time" in fore.columns:
+            fore.rename(columns={"time": "Datetime"}, inplace=True)
+
+        # convert types
+        if "Datetime" in wl_hourly.columns:
+            wl_copy = wl_hourly.copy()
         else:
-            # Semua ke depan → pakai forecast penuh
-            progress_container.markdown("Fetching full forecast climate data...")
-            climate_forecast = fetch_forecast_multi()
+            wl_copy = wl_hourly.copy()
+            if "time" in wl_copy.columns:
+                wl_copy.rename(columns={"time": "Datetime"}, inplace=True)
+        wl_copy["Datetime"] = pd.to_datetime(wl_copy["Datetime"])
 
-        step_counter += 1
-        progress_bar.progress(step_counter / total_steps)
+        if not hist.empty:
+            hist["Datetime"] = pd.to_datetime(hist["Datetime"])
+            merged_hist = pd.merge(wl_copy, hist, on="Datetime", how="left").sort_values("Datetime")
+            merged_hist["Source"] = "Historical"
+        else:
+            merged_hist = wl_copy.copy()
+            merged_hist["Relative_humidity"] = np.nan
+            merged_hist["Rainfall"] = np.nan
+            merged_hist["Cloud_cover"] = np.nan
+            merged_hist["Surface_pressure"] = np.nan
+            merged_hist["Region"] = region_label
+            merged_hist["Source"] = "Historical"
 
-        # 3️⃣ Merge water level and climate data
-        progress_container.markdown("Merging water level and climate data...")
-
-        for df_name, df in zip(["wl_hourly", "climate_hist", "climate_forecast"],
-                               [wl_hourly, climate_hist, climate_forecast]):
-            if df is not None:
-                if "Datetime" not in df.columns and "time" in df.columns:
-                    df.rename(columns={"time": "Datetime"}, inplace=True)
-
-        wl_hourly["Datetime"] = pd.to_datetime(wl_hourly["Datetime"])
-        climate_hist["Datetime"] = pd.to_datetime(climate_hist["Datetime"])
-        climate_forecast["Datetime"] = pd.to_datetime(climate_forecast["Datetime"])
-
-        merged_hist = pd.merge(wl_hourly, climate_hist, on="Datetime", how="left").sort_values("Datetime")
-        merged_hist["Source"] = "Historical"
-
+        # 4) Merge forecast: create forecast timeline (same for all regions) and merge region forecast
+        progress_container.markdown(f"🔗 Merging water level placeholder with climate (Forecast) for **{region_label}** ...")
         forecast_hours = [start_datetime + timedelta(hours=i) for i in range(total_forecast_hours)]
-        forecast_df = pd.DataFrame({"Datetime": pd.to_datetime(forecast_hours)})
+        forecast_df_timeline = pd.DataFrame({"Datetime": forecast_hours})
+        forecast_df_timeline["Datetime"] = pd.to_datetime(forecast_df_timeline["Datetime"])
 
-        forecast_merged = pd.merge(forecast_df, climate_forecast, on="Datetime", how="left")
-        forecast_merged["Water_level"] = np.nan
+        if not fore.empty:
+            fore["Datetime"] = pd.to_datetime(fore["Datetime"])
+            forecast_merged = pd.merge(forecast_df_timeline, fore, on="Datetime", how="left")
+            forecast_merged["Water_level"] = np.nan
+        else:
+            forecast_merged = forecast_df_timeline.copy()
+            forecast_merged["Relative_humidity"] = np.nan
+            forecast_merged["Rainfall"] = np.nan
+            forecast_merged["Cloud_cover"] = np.nan
+            forecast_merged["Surface_pressure"] = np.nan
+            forecast_merged["Water_level"] = np.nan
+
         forecast_merged["Source"] = "Forecast"
+        forecast_merged["Region"] = region_label
 
-        final_df = pd.concat([merged_hist, forecast_merged], ignore_index=True).sort_values("Datetime")
-        final_df = final_df.apply(lambda x: np.round(x, 2) if np.issubdtype(x.dtype, np.number) else x)
+        # Ensure Region column in merged_hist
+        if "Region" not in merged_hist.columns:
+            merged_hist["Region"] = region_label
 
-        st.session_state["final_df"] = final_df
-        st.session_state["forecast_done"] = True
-        st.session_state["forecast_running"] = False
+        # Select & unify columns
+        cols_needed = ["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure", "Water_level", "Source"]
+        # add missing columns to merged_hist/forecast_merged
+        for c in cols_needed:
+            if c not in merged_hist.columns:
+                merged_hist[c] = np.nan
+            if c not in forecast_merged.columns:
+                forecast_merged[c] = np.nan
 
+        # combine for this region
+        region_final = pd.concat([merged_hist[cols_needed], forecast_merged[cols_needed]], ignore_index=True).sort_values("Datetime")
+        # round numeric
+        region_final = region_final.apply(lambda x: np.round(x,2) if np.issubdtype(x.dtype, np.number) else x)
+        region_final_list.append(region_final)
+
+        # update progress a bit
         step_counter += 1
-        progress_bar.progress(step_counter / total_steps)
-        progress_container.success("✅ Climate data fetching complete!")
+        progress_bar.progress(min(step_counter / total_steps, 1.0))
 
-    except Exception as e:
-        st.session_state["forecast_running"] = False
-        progress_container.error(f"Terjadi error saat fetching data: {e}")
+    # akhir loop region
+    if region_final_list:
+        final_df = pd.concat(region_final_list, ignore_index=True).sort_values(["Region","Datetime"])
+    else:
+        final_df = pd.DataFrame()
+
+    # simpan ke session_state dan tandai selesai
+    st.session_state["final_df"] = final_df
+    st.session_state["forecast_running"] = False
+    st.session_state["forecast_done"] = True
+
+    progress_container.markdown("✅ Forecast processing complete for all locations.")
+    progress_bar.progress(1.0)
 
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
