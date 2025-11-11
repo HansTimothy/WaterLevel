@@ -10,6 +10,5 @@ XlsxWriter
 openpyxl
 reportlab
 scipy
-tensorflow==2.14.0
+tensorflow
 h5py
-
