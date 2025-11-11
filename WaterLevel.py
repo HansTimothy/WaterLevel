@@ -405,6 +405,12 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Hapus duplikat waktu (kalau ada overlap hist/forecast)
         combined_df = combined_df.drop_duplicates(subset=["Datetime"], keep="last")
 
+        # --- Batasi waktu ---
+        combined_df = combined_df[
+            (combined_df["Datetime"] >= start_datetime - timedelta(hours=96)) &
+            (combined_df["Datetime"] <= start_datetime + timedelta(hours=168))
+        ]
+
         # Ganti nama kolom jadi prefiks region (T_, SL_, dst)
         rename_map = {
             "Relative_humidity": f"{region_name}Relative_humidity",
@@ -445,7 +451,8 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Semua data sebelum start_datetime = Historical, setelah = Forecast
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
 
-    forecast_indices = final_df.index[final_df["Source"]=="Forecast"]
+    forecast_mask = (final_df["Datetime"] > start_datetime) & (final_df["Datetime"] <= start_datetime + timedelta(hours=168))
+    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
 
     for i, idx in enumerate(forecast_indices, start=1):
         progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
