@@ -216,15 +216,24 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         data = data[:len(region_points)]
 
     all_dfs = []
+
+    # jika data hanya 1 elemen, pakai untuk semua titik
+    single_response = len(data) == 1
+    
     for i, (dir_name, info) in enumerate(region_points.items()):
-        loc_data = data[i]
+        try:
+            loc_data = data[0] if single_response else data[i]
+        except IndexError:
+            # kalau API balikin lebih sedikit dari titik kita, skip sisanya
+            continue
+    
         df = pd.DataFrame(loc_data.get("hourly", {}))
         if df.empty:
             continue
-        df["direction"] = dir_name
-        df["weight"] = info["weight"]
-        all_dfs.append(df)
 
+    df["direction"] = dir_name
+    df["weight"] = info["weight"]
+    all_dfs.append(df)
     if not all_dfs:
         return pd.DataFrame()
 
