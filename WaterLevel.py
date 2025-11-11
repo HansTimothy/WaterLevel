@@ -458,15 +458,46 @@ if upload_success and st.session_state.get("forecast_running", False):
 
     # akhir loop region
     if region_final_list:
-        final_df = pd.concat(region_final_list, ignore_index=True).sort_values(["Region","Datetime"])
+        # Gabungkan semua region jadi satu dataframe panjang
+        final_df = pd.concat(region_final_list, ignore_index=True).sort_values(["Region", "Datetime"])
+    
+        # -----------------------------
+        # 🔄 Ubah dari long ke wide (kolom per region)
+        # -----------------------------
+        prefix_map = {
+            "Tuhup": "T",
+            "Sungai Laung": "SL",
+            "Muara Bumban": "MB",
+            "Muara Untu": "MU"
+        }
+    
+        # Pivot per Region → tiap variabel jadi kolom dengan prefix region
+        pivot_df = final_df.pivot_table(
+            index="Datetime",
+            columns="Region",
+            values=["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure", "Water_level"]
+        )
+    
+        # Gabungkan multiindex kolom → "T_Rainfall", "SL_Rainfall", dst.
+        pivot_df.columns = [
+            f"{prefix_map.get(region, region)}_{var}"
+            for var, region in pivot_df.columns
+        ]
+    
+        pivot_df = pivot_df.reset_index().sort_values("Datetime")
+    
+        # Simpan hasil ke session_state
+        st.session_state["final_df"] = pivot_df
     else:
         final_df = pd.DataFrame()
-
-    # simpan ke session_state dan tandai selesai
-    st.session_state["final_df"] = final_df
+        st.session_state["final_df"] = final_df
+    
+    # -----------------------------
+    # Tandai proses selesai
+    # -----------------------------
     st.session_state["forecast_running"] = False
     st.session_state["forecast_done"] = True
-
+    
     progress_container.markdown("✅ Forecast processing complete for all locations.")
     progress_bar.progress(1.0)
 
