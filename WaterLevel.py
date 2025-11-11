@@ -507,14 +507,6 @@ if upload_success and st.session_state.get("forecast_running", False):
 
     # Pastikan kolom Source ada
     if "Source" not in final_df.columns:
-        # Semua data sebelum start_datetime = Historical, setelah = Forecast
-        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
-
-    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
-    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
-
-    # Pastikan kolom Source ada
-    if "Source" not in final_df.columns:
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
     
     # Tentukan forecast horizon
