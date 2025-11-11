@@ -192,7 +192,7 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={latitudes}&longitude={longitudes}"
         f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-        "&hourly=relative_humidity_2m, precipitation,cloud_cover,surface_pressure"
+        "&hourly=relative_humidity_2m,precipitation,cloud_cover,surface_pressure"
         "&timezone=Asia%2FBangkok"
     )
 
@@ -203,64 +203,53 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching historical: {e}")
         return pd.DataFrame()
 
-    # Pastikan data berupa list of dicts
-    if isinstance(data, dict):
-        data = [data]
+    # --- Normalisasi format respons
+    if isinstance(data, dict) and "hourly" in data:
+        data = [data] * len(region_points)  # duplikasikan 1 response untuk semua titik
+    elif isinstance(data, dict):
+        data = list(data.values()) if "latitude" not in data else [data]
     elif not isinstance(data, list):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected historical response format.")
         return pd.DataFrame()
-    
-    # Jika jumlah titik tidak cocok, potong agar sesuai panjang region_points
-    if len(data) != len(region_points):
+
+    # --- Jika jumlah item tidak sama, sesuaikan panjangnya
+    if len(data) < len(region_points):
         st.info(f"[{region_labels.get(region_name, region_name)}] Adjusting historical response length ({len(data)} vs {len(region_points)}).")
+        while len(data) < len(region_points):
+            data.append(data[-1])
+    elif len(data) > len(region_points):
         data = data[:len(region_points)]
 
     all_dfs = []
 
-    # jika data hanya 1 elemen, pakai untuk semua titik
-    single_response = len(data) == 1
-    
     for i, (dir_name, info) in enumerate(region_points.items()):
-        try:
-            loc_data = data[0] if single_response else data[i]
-        except IndexError:
-            # kalau API balikin lebih sedikit dari titik kita, skip sisanya
-            continue
-    
-        df = pd.DataFrame(loc_data.get("hourly", {}))
-        if df.empty:
+        loc_data = data[i]
+        if not isinstance(loc_data, dict) or "hourly" not in loc_data:
             continue
 
-    df["direction"] = dir_name
-    df["weight"] = info["weight"]
-    all_dfs.append(df)
+        df = pd.DataFrame(loc_data["hourly"])
+        if df.empty or "time" not in df.columns:
+            continue
+
+        df["direction"] = dir_name
+        df["weight"] = info["weight"]
+        all_dfs.append(df)
+
     if not all_dfs:
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid historical data.")
         return pd.DataFrame()
 
     df_all = pd.concat(all_dfs, ignore_index=True)
-    # ensure time column
-    if "time" in df_all.columns:
-        df_all["time"] = pd.to_datetime(df_all["time"])
-    else:
-        st.warning(f"[{region_labels.get(region_name, region_name)}] No 'time' in historical hourly.")
-        return pd.DataFrame()
+    df_all["time"] = pd.to_datetime(df_all["time"])
 
-    # Weighted average per time
+    # Weighted average
     weighted_list = []
     for time, group in df_all.groupby("time"):
         w = group["weight"].values
-        # multiply each numeric col by weights and sum
-        try:
-            weighted_vals = (group[numeric_cols_hist].T * w).T.sum()
-        except Exception:
-            # if numeric cols missing, skip
-            continue
+        weighted_vals = (group[numeric_cols_hist].T * w).T.sum()
         row = weighted_vals.to_dict()
         row["Datetime"] = time
         weighted_list.append(row)
-
-    if not weighted_list:
-        return pd.DataFrame()
 
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted.rename(columns={
@@ -269,12 +258,12 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         "cloud_cover": "Cloud_cover",
         "surface_pressure": "Surface_pressure"
     }, inplace=True)
-    # round numeric
-    for c in ["Relative_humidity", "Rainfall", "Cloud_cover", "Soil_moisture"]:
+    for c in ["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]:
         if c in df_weighted.columns:
             df_weighted[c] = df_weighted[c].round(2)
+
     df_weighted["Region"] = region_labels.get(region_name, region_name)
-    return df_weighted[["Datetime", "Region", "Relative_humidity","Rainfall", "Cloud_cover", "Surface_pressure"]]
+    return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
 
 # -----------------------------
@@ -287,7 +276,7 @@ def fetch_forecast_multi_region(region_name, region_points):
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={latitudes}&longitude={longitudes}"
-        "&hourly=relative_humidity_2m, precipitation,cloud_cover,surface_pressure"
+        "&hourly=relative_humidity_2m,precipitation,cloud_cover,surface_pressure"
         "&forecast_days=16&timezone=Asia%2FBangkok"
     )
 
@@ -298,51 +287,51 @@ def fetch_forecast_multi_region(region_name, region_points):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching forecast: {e}")
         return pd.DataFrame()
 
-    # Pastikan data berupa list of dicts
-    if isinstance(data, dict):
-        data = [data]
+    # --- Normalisasi format respons
+    if isinstance(data, dict) and "hourly" in data:
+        data = [data] * len(region_points)
+    elif isinstance(data, dict):
+        data = list(data.values()) if "latitude" not in data else [data]
     elif not isinstance(data, list):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected forecast response format.")
         return pd.DataFrame()
-    
-    # Jika jumlah titik tidak cocok, potong agar sesuai panjang region_points
-    if len(data) != len(region_points):
+
+    if len(data) < len(region_points):
         st.info(f"[{region_labels.get(region_name, region_name)}] Adjusting forecast response length ({len(data)} vs {len(region_points)}).")
+        while len(data) < len(region_points):
+            data.append(data[-1])
+    elif len(data) > len(region_points):
         data = data[:len(region_points)]
 
     all_dfs = []
+
     for i, (dir_name, info) in enumerate(region_points.items()):
         loc_data = data[i]
-        df = pd.DataFrame(loc_data.get("hourly", {}))
-        if df.empty:
+        if not isinstance(loc_data, dict) or "hourly" not in loc_data:
             continue
+
+        df = pd.DataFrame(loc_data["hourly"])
+        if df.empty or "time" not in df.columns:
+            continue
+
         df["direction"] = dir_name
         df["weight"] = info["weight"]
         all_dfs.append(df)
 
     if not all_dfs:
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid forecast data.")
         return pd.DataFrame()
 
     df_all = pd.concat(all_dfs, ignore_index=True)
-    if "time" in df_all.columns:
-        df_all["time"] = pd.to_datetime(df_all["time"])
-    else:
-        st.warning(f"[{region_labels.get(region_name, region_name)}] No 'time' in forecast hourly.")
-        return pd.DataFrame()
+    df_all["time"] = pd.to_datetime(df_all["time"])
 
     weighted_list = []
     for time, group in df_all.groupby("time"):
         w = group["weight"].values
-        try:
-            weighted_vals = (group[numeric_cols_fore].T * w).T.sum()
-        except Exception:
-            continue
+        weighted_vals = (group[numeric_cols_fore].T * w).T.sum()
         row = weighted_vals.to_dict()
         row["Datetime"] = time
         weighted_list.append(row)
-
-    if not weighted_list:
-        return pd.DataFrame()
 
     df_weighted = pd.DataFrame(weighted_list)
     df_weighted.rename(columns={
@@ -354,6 +343,7 @@ def fetch_forecast_multi_region(region_name, region_points):
     for c in ["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]:
         if c in df_weighted.columns:
             df_weighted[c] = df_weighted[c].round(2)
+
     df_weighted["Region"] = region_labels.get(region_name, region_name)
     return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
