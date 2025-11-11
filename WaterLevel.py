@@ -501,26 +501,19 @@ if upload_success and st.session_state.get("forecast_running", False):
 
         for f in model_features:
             if "_Lag" in f:
-                base, lag_str = f.rsplit("_Lag",1)
-                try:
-                    lag = int(lag_str)
-                except:
-                    lag = 1
-            else:
-                base = f
-                lag = 0
-
-            # Ambil nilai lag dari final_df
-            if base in final_df.columns:
-                lag_index = idx - lag
-                if lag_index >= 0:
-                    X_forecast.at[0,f] = final_df.iloc[lag_index].get(base, 0)
+                base, lag_str = f.rsplit("_Lag", 1)
+                lag = int(lag_str)
+                lag_time = final_df.at[idx, "Datetime"] - pd.Timedelta(hours=lag)
+                # Ambil nilai dari final_df, gunakan forward-fill jika tidak ada
+                if base in final_df.columns:
+                    val = final_df.loc[final_df["Datetime"] == lag_time, base]
+                    if not val.empty:
+                        X_forecast.at[0, f] = val.values[0]
+                    else:
+                        # fallback: ambil nilai terakhir historical
+                        X_forecast.at[0, f] = final_df.loc[final_df["Source"]=="Historical", base].ffill().iloc[-1]
                 else:
-                    # kalau lag lebih besar dari panjang historical, ambil nilai pertama historical
-                    X_forecast.at[0,f] = final_df.loc[final_df["Source"]=="Historical", base].iloc[0]
-            else:
-                # fallback jika kolom tidak ada
-                X_forecast.at[0,f] = 0
+                    X_forecast.at[0, f] = 0
 
         # pastikan tipe float
         X_forecast = X_forecast.astype(float)
