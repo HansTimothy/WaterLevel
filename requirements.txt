@@ -8,6 +8,7 @@ pytz
 XlsxWriter
 openpyxl
 reportlab
-tensorflow==2.14.0
-h5py==3.9.0
+tensorflow
+h5py
 requests
+
