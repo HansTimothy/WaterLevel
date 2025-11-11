@@ -385,12 +385,14 @@ if upload_success and st.session_state.get("forecast_running", False):
                                                start_datetime - timedelta(hours=96),
                                                start_datetime)
         step_counter += 1
-        progress_bar.progress(step_counter / total_steps)
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+
 
         # Fetch forecast
         fore_df = fetch_forecast_multi_region(region_name, region_points)
         step_counter += 1
-        progress_bar.progress(step_counter / total_steps)
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+
 
         # Gabungkan historical + forecast jadi satu (Datetime + var)
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
@@ -419,7 +421,7 @@ if upload_success and st.session_state.get("forecast_running", False):
             on="Datetime", how="outer"
         )
         step_counter += 1
-        progress_bar.progress(min(step_counter / total_steps, 1.0))
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
 
     # urutkan dan rapikan
     merged_wide = merged_wide.sort_values("Datetime")
@@ -430,9 +432,6 @@ if upload_success and st.session_state.get("forecast_running", False):
     st.session_state["final_df"] = merged_wide
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
-
-    progress_container.empty()
-    progress_bar.progress(1.0)
 
     # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
@@ -482,7 +481,8 @@ if upload_success and st.session_state.get("forecast_running", False):
         final_df.at[idx,"Water_level"] = round(y_hat,2)
 
         step_counter += 1
-        progress_bar.progress(step_counter / total_steps)
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+
 
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
