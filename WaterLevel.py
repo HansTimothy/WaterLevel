@@ -10,13 +10,13 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
-from tensorflow.keras.models import load_model
+import keras
 
 # -----------------------------
 # Load trained model
 # -----------------------------
 # Load LSTM model & scalers
-lstm_model = load_model("lstm_waterlevel_model.h5")
+lstm_model = keras.models.load_model("lstm_waterlevel_model.h5")
 scaler_X = joblib.load("scaler_X.pkl")
 scaler_y = joblib.load("scaler_y.pkl")
 
