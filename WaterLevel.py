@@ -640,20 +640,27 @@ if upload_success and st.session_state.get("forecast_running", False):
             # 1. Buat DataFrame khusus untuk styling/display. 
             df_for_styling = final_df[display_cols].copy()
 
-            # 2. Ensure numeric columns are float
-            numeric_cols = df_for_styling.select_dtypes(include=np.number).columns
-            df_for_styling[numeric_cols] = df_for_styling[numeric_cols].astype(float)
-            
-            # 3. Definisikan fungsi styling
+            # 2. Definisikan fungsi styling
             def highlight_forecast(row):
                 # Fungsi ini sekarang aman karena 'Source' ada di df_for_styling
                 return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
+
+            num_cols_to_format = [
+                "Water_level", "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
+                "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
+                "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
+                "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure"
+            ]
+
+            #Buat dictionary format
+            format_dict = {col: "{:.2f}" for col in num_cols_to_format if col in df_for_styling.columns}
             
+            # Terapkan styling
             styled_df = df_for_styling.style.apply(
                 highlight_forecast,
                 axis=1
-            ).format("{:.2f}")
-            
+            ).format(format_dict)
+
             st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
