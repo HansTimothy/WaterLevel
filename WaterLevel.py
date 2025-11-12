@@ -555,7 +555,7 @@ if upload_success and st.session_state.get("forecast_running", False):
             base_col, lag_num = col.rsplit("_Lag", 1)
             lag_num = int(lag_num)
             if base_col in final_df.columns:
-                lag_cols_dict[col] = final_df[base_col].shift(lag_num)
+                lag_cols_dict[col] = final_df[base_col].shift(lag_num).round(2)
             else:
                 lag_cols_dict[col] = np.nan
         else:
@@ -616,7 +616,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         final_df.at[idx, "Water_level"] = round(y_hat, 2)
     
         # --- 4. Update progress ---
-        progress_container.markdown(f"Forecasting Water Level: **Hour {i}/{len(forecast_indices)}**")
+        progress_container.markdown(f"Forecasting Water Level **(Hour {i}/{len(forecast_indices)})**")
         progress_bar.progress(min(max(i / len(forecast_indices), 0.0), 1.0))
     
     # set session state selesai
