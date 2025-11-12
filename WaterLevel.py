@@ -10,35 +10,15 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
 
-scaler_X = joblib.load("scaler_X.pkl") 
+# -----------------------------
+# Load trained model
+# -----------------------------
+# Load LSTM model & scalers
+lstm_model = load_model("lstm_waterlevel_model.h5")
+scaler_X = joblib.load("scaler_X.pkl")
 scaler_y = joblib.load("scaler_y.pkl")
 
-# ============================
-# Parameters (samakan dengan saat training)
-# ============================
-units = 128
-dropout_rate = 0.3
-window_size = 24  # sama seperti saat training
-n_features = 725
-
-# ============================
-# Rebuild LSTM model
-# ============================
-model = Sequential()
-model.add(LSTM(units, input_shape=(window_size, n_features), return_sequences=True))
-model.add(Dropout(dropout_rate))
-model.add(LSTM(units // 2))
-model.add(Dense(1))
-
-# Load bobot
-model.load_weights("lstm_waterlevel_weights.h5")
-
-# -----------------------------
-# Load trained XGB model
-# -----------------------------
 st.title("🌊 Water Level Forecast Dashboard")
 
 # -----------------------------
@@ -371,6 +351,22 @@ def fetch_forecast_multi_region(region_name, region_points):
     df_weighted["Region"] = region_labels.get(region_name, region_name)
     return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
+def create_lstm_input(df, feature_cols, target_col, window_size, idx_datetime):
+    X_seq = []
+    for f in feature_cols:
+        # Ambil window_size jam sebelum idx_datetime
+        lag_times = [idx_datetime - pd.Timedelta(hours=i) for i in range(window_size,0,-1)]
+        vals = []
+        for lt in lag_times:
+            if lt in df["Datetime"].values:
+                vals.append(df.loc[df["Datetime"]==lt, f].values[0])
+            else:
+                # fallback: pakai terakhir historical
+                vals.append(df.loc[df["Source"]=="Historical", f].ffill().iloc[-1])
+        X_seq.append(vals)
+    # shape -> (1, timesteps, features)
+    X_seq = np.array(X_seq).T.reshape(1, window_size, len(feature_cols))
+    return X_seq
 
 # -----------------------------
 # Wrapper: proses setiap region berurutan dan merge jadi satu wide table
@@ -457,57 +453,18 @@ if upload_success and st.session_state.get("forecast_running", False):
     # urutkan dan rapikan
     merged_wide = merged_wide.sort_values("Datetime")
     merged_wide = merged_wide.round(2)
+
+    final_df = merged_wide.copy()
     
     st.session_state["final_df"] = merged_wide
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
 
-    def create_lag_features(df, cols, max_lag=95):
-        for col in cols:
-            for lag in range(1, max_lag+1):
-                df[f"{col}_Lag{lag}"] = df[col].shift(lag)
-        return df
-    
-    lag_cols = [
-        "Water_level",
-        "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
-        "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
-        "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
-        "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure"
-    ]
-    
-    # Setelah membuat final_df
-    final_df = merged_wide.copy()
-    
-    # Lanjutkan buat lag features
-    final_df = create_lag_features(final_df, lag_cols, max_lag=95)
-    final_df.fillna(method='bfill', inplace=True)
-
-    
-    # -----------------------------
-    # 4️⃣ Iterative forecast (perbaikan)
-    # -----------------------------
+    # 4️⃣ Iterative forecast
     progress_container.markdown("Forecasting water level 7 days iteratively...")
-    
-    # Pastikan ada baris forecast
-    forecast_hours = 168  # 7 hari × 24 jam
-    if "Source" not in final_df.columns:
-        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
-    
-    forecast_indices = final_df.index[final_df["Source"] == "Forecast"].tolist()
-    if not forecast_indices:
-        last_time = final_df["Datetime"].max()
-        forecast_rows = pd.DataFrame({
-            "Datetime": [last_time + timedelta(hours=i+1) for i in range(forecast_hours)],
-            "Source": ["Forecast"]*forecast_hours,
-            "Water_level": [np.nan]*forecast_hours
-        })
-        final_df = pd.concat([final_df, forecast_rows], ignore_index=True)
-        forecast_indices = final_df.index[final_df["Source"] == "Forecast"].tolist()
-    
-    # List fitur untuk model
+    # Gunakan urutan manual fitur
     model_features = []
-    
+
     # T_ group
     for i in range(61, 96):
         model_features.append(f"T_Relative_humidity_Lag{i}")
@@ -545,53 +502,49 @@ if upload_success and st.session_state.get("forecast_running", False):
     # Water_level_ group
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
+
+
+    # Pastikan kolom Source ada
+    if "Source" not in final_df.columns:
+        # Semua data sebelum start_datetime = Historical, setelah = Forecast
+        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+
+    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
+    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
+
+    window_size = 96
+    feature_cols = model_features
+    target_col = "Water_level"
     
-    # Pastikan semua kolom ada
-    model_features = [col for col in model_features if col in final_df.columns]
-    
-    # Iterative forecast per baris
     for i, idx in enumerate(forecast_indices, start=1):
-        next_datetime = final_df.at[idx, "Datetime"]
+        progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
     
-        progress_container.markdown(
-            f"⏳ Forecasting hour {i} of {forecast_hours} "
-            f"({(i-1)//24 + 1} of 7 days)..."
-        )
+        dt = final_df.at[idx, "Datetime"]
     
-        # Ambil window terakhir sebelum jam ini
-        hist_part = final_df.loc[final_df["Datetime"] < next_datetime].tail(window_size)
-        if len(hist_part) < window_size:
-            continue  # belum cukup data
+        # 1️⃣ buat input LSTM
+        X_seq = create_lstm_input(final_df, feature_cols, target_col, window_size, dt)
     
-        X_seq_df = pd.DataFrame([hist_part[model_features].iloc[-window_size:].values.flatten()],
-                        columns=model_features)
-        X_seq_scaled = scaler_X.transform(X_seq_df)
-        X_seq_scaled = X_seq_scaled.reshape(1, window_size, len(model_features))
+        # 2️⃣ scaling
+        X_scaled = scaler_X.transform(X_seq.reshape(-1, len(feature_cols))).reshape(1, window_size, len(feature_cols))
     
-        # Prediksi
-        y_hat_scaled = model.predict(X_seq_scaled, verbose=0)
-        y_hat = scaler_y.inverse_transform(y_hat_scaled)[0, 0]
-        y_hat = max(0, y_hat)
+        # 3️⃣ prediksi
+        y_scaled = lstm_model.predict(X_scaled, verbose=0)
+        y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
+        if y_hat < 0: y_hat = 0
     
-        # Simpan hasil prediksi
-        final_df.at[idx, "Water_level"] = round(y_hat, 2)
+        # 4️⃣ masukkan ke final_df
+        final_df.at[idx, "Water_level"] = round(y_hat,2)
     
-        # Update lag kolom per baris
-        for lag in range(95, 0, -1):
-            lag_col = f"Water_level_Lag{lag}"
-            if lag_col not in final_df.columns:
-                continue
-            if lag == 1:
-                final_df.at[idx, lag_col] = y_hat
-            else:
-                prev_col = f"Water_level_Lag{lag-1}"
-                prev_val = final_df.at[idx-1, prev_col] if idx > 0 and prev_col in final_df.columns else y_hat
-                final_df.at[idx, lag_col] = prev_val
-    
-        # Update progress bar
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
     
+    
+        st.session_state["final_df"] = final_df
+        st.session_state["forecast_done"] = True
+        st.session_state["forecast_running"] = False
+        progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
+        progress_bar.progress(1.0)
+        
 # -----------------------------
 # Display Forecast & Plot
 # -----------------------------
@@ -600,30 +553,16 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
     final_df = st.session_state["final_df"]
     with result_container.container():
         st.subheader("Water Level + Climate Data with Forecast")
-        
-        # 🔹 Pilih hanya kolom utama (tanpa lag)
-        main_columns = [
-            "Datetime", "Water_level",
-            "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
-            "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
-            "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
-            "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure"
-        ]
-        
-        # Ambil hanya kolom yang benar-benar ada
-        display_df = final_df[main_columns].copy()
-
-
-        # 🔹 Highlight baris forecast
         def highlight_forecast(row):
             return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
+        
+        # Ambil semua kolom numerik
+        numeric_cols = final_df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Terapkan format hanya untuk kolom numerik
+        styled_df = final_df.style.apply(highlight_forecast, axis=1)\
+                                   .format({col: "{:.2f}" for col in numeric_cols})
 
-        # 🔹 Format hanya kolom numerik (biar rapi)
-        numeric_cols = display_df.select_dtypes(include=[np.number]).columns.tolist()
-        styled_df = display_df.style.apply(highlight_forecast, axis=1)\
-                                    .format({col: "{:.2f}" for col in numeric_cols})
-
-        # 🔹 Tampilkan di Streamlit
         st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
@@ -633,100 +572,127 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         fig = go.Figure()
         hist_df = final_df[final_df["Source"] == "Historical"]
         fore_df = final_df[final_df["Source"] == "Forecast"]
-
-
+        
+        # Hitung RMSE antara data historis terakhir dan forecast awal (jika ada data aktual)
         if not fore_df.empty:
-            rmse = 0.03
+            # Contoh nilai RMSE, bisa kamu ubah kalau mau dinamis
+            rmse = 0.03  
+        
             last_val = hist_df["Water_level"].iloc[-1]
             forecast_x = pd.concat([pd.Series([hist_df["Datetime"].iloc[-1]]), fore_df["Datetime"]])
             forecast_y = pd.concat([pd.Series([last_val]), fore_df["Water_level"]])
-
+        
+            # Hitung batas atas & bawah error band
             upper_y = forecast_y + rmse
             lower_y = forecast_y - rmse
-            lower_y = lower_y.clip(lower=0)
-
+            lower_y = lower_y.clip(lower=0)  # batas bawah tidak boleh < 0
+        
+            # Tambah area ±RMSE
             fig.add_trace(go.Scatter(
                 x=pd.concat([forecast_x, forecast_x[::-1]]),
                 y=pd.concat([upper_y, lower_y[::-1]]),
-                fill="toself", fillcolor="rgba(255,165,0,0.2)",
+                fill="toself",
+                fillcolor="rgba(255,165,0,0.2)",
                 line=dict(color="rgba(255,165,0,0)"),
                 hoverinfo="skip",
-                showlegend=True, name="±RMSE 0.03m"
+                showlegend=True,
+                name="±RMSE 0.03m"
             ))
-
+        
+            # Tambah garis forecast
             fig.add_trace(go.Scatter(
                 x=forecast_x, y=forecast_y,
-                mode="lines+markers", name="Forecast",
-                line=dict(color="orange"), marker=dict(size=4)
+                mode="lines+markers",
+                name="Forecast",
+                line=dict(color="orange"),
+                marker=dict(size=4)
             ))
-
+        
+        # Garis historis
         fig.add_trace(go.Scatter(
             x=hist_df["Datetime"], y=hist_df["Water_level"],
-            mode="lines+markers", name="Historical",
-            line=dict(color="blue"), marker=dict(size=4)
+            mode="lines+markers",
+            name="Historical",
+            line=dict(color="blue"),
+            marker=dict(size=4)
         ))
 
+        # Tambah garis horizontal limit
         fig.add_trace(go.Scatter(
-            x=[final_df["Datetime"].min(), final_df["Datetime"].max()],
-            y=[19.5, 19.5],
-            mode="lines", line=dict(color="red", dash="dash"),
+            x=[final_df["Datetime"].min(), final_df["Datetime"].max()],  # sepanjang sumbu X
+            y=[19.5, 19.5],  # nilai horizontal tetap
+            mode="lines",
+            line=dict(color="red", dash="dash"),  # garis putus-putus merah
             name="Lower Limit 19.5 m"
         ))
+        
         fig.add_trace(go.Scatter(
             x=[final_df["Datetime"].min(), final_df["Datetime"].max()],
             y=[28, 28],
-            mode="lines", line=dict(color="red", dash="dash"),
+            mode="lines",
+            line=dict(color="red", dash="dash"),
             name="Upper Limit 28 m"
         ))
-
+        
+        # Layout dan annotation RMSE
         fig.update_layout(
             title="Water Level Historical vs Forecast",
-            xaxis_title="Datetime", yaxis_title="Water Level (m)",
+            xaxis_title="Datetime",
+            yaxis_title="Water Level (m)",
             template="plotly_white",
             annotations=[
                 dict(
-                    xref="paper", yref="paper", x=0.98, y=0.95,
-                    text=f"RMSE = {rmse:.2f}", showarrow=False,
+                    xref="paper", yref="paper",
+                    x=0.98, y=0.95,
+                    text=f"RMSE = {rmse:.2f}",
+                    showarrow=False,
                     font=dict(size=12, color="black"),
                     bgcolor="rgba(255,255,255,0.7)",
                     bordercolor="rgba(0,0,0,0.2)",
-                    borderwidth=1, borderpad=4
+                    borderwidth=1,
+                    borderpad=4
                 )
             ]
         )
-
+        
         st.plotly_chart(fig, use_container_width=True)
-
+        
         # -----------------------------
-        # Downloads (Forecast only)
+        # Downloads (Forecast only, Datetime + Water_level, 2 decimals)
         # -----------------------------
         forecast_only = final_df[final_df["Source"] == "Forecast"][["Datetime", "Water_level"]].copy()
         forecast_only["Water_level"] = forecast_only["Water_level"].round(2)
         forecast_only["Datetime"] = forecast_only["Datetime"].astype(str)
 
+        
+        # CSV
         csv_buffer = forecast_only.to_csv(index=False).encode('utf-8')
+        
+        # Excel
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             forecast_only.to_excel(writer, index=False, sheet_name="Forecast")
         excel_buffer.seek(0)
-
+        
+        # PDF
         pdf_buffer = BytesIO()
         doc = SimpleDocTemplate(pdf_buffer, pagesize=landscape(A4))
         styles = getSampleStyleSheet()
         data = [forecast_only.columns.tolist()] + forecast_only.values.tolist()
         table = Table(data)
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#007acc")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,-1), 9),
-            ('BOTTOMPADDING', (0,0), (-1,0), 6),
-            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#007acc")),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),9),
+            ('BOTTOMPADDING',(0,0),(-1,0),6),
+            ('GRID',(0,0),(-1,-1),0.25,colors.grey),
         ]))
         elements = [Paragraph("Joloi Water Level Forecast (Forecast Only)", styles["Title"]), table]
         doc.build(elements)
-
+        
+        # Download buttons
         col1, col2, col3 = st.columns(3)
         with col1:
             st.download_button("Download CSV", csv_buffer, "water_level_forecast.csv", "text/csv", use_container_width=True)
@@ -735,5 +701,6 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col3:
             st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
+
 else:
     result_container.empty()
