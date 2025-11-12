@@ -14,22 +14,35 @@ from keras.models import Sequential
 from keras.layers import LSTM, Dropout, Dense
 from keras.optimizers import Adam
 
+display_cols = [
+    # T_ region
+    "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
+    # SL_ region
+    "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
+    # MB_ region
+    "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
+    # MU_ region
+    "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure",
+    # Water level
+    "Water_level"
+]
 
 # Load LSTM model & scalers
 scaler_X = joblib.load("scaler_X.pkl")
 scaler_y = joblib.load("scaler_y.pkl")
 
-n_features = scaler_X.n_features_in_  # jumlah fitur input
-timesteps = 24  # sesuaikan dengan data/memori LSTM lama
+# Jumlah fitur input
+n_features = scaler_X.n_features_in_  # misal 725
+timesteps = 24  # sesuai data
 
-# Rebuild model
+# Bangun model LSTM
 model = Sequential()
 model.add(LSTM(128, input_shape=(timesteps, n_features), return_sequences=True))
 model.add(Dropout(0.3))
 model.add(LSTM(64))
 model.add(Dense(1))
 
-# Compile model
+# Compile model dengan Adam optimizer
 optimizer = Adam(learning_rate=0.0005)
 model.compile(optimizer=optimizer, loss='mse')
 
@@ -119,7 +132,7 @@ if uploaded_file is not None:
             wl_hourly['Water_level'] = wl_hourly['Water_level'].interpolate(method='linear', limit_direction='both')
             wl_hourly['Water_level'] = wl_hourly['Water_level'].rolling(window=3, center=True, min_periods=1).median()
             wl_hourly['Water_level'] = wl_hourly['Water_level'].rolling(window=3, center=True, min_periods=1).mean()
-            wl_hourly['Water_level'] = wl_hourly['Water_level'].round(3)
+            wl_hourly['Water_level'] = wl_hourly['Water_level'].round(2)
             
             # -----------------------
             # 6️⃣ Hanya 96 jam terakhir sebelum start_datetime
@@ -368,22 +381,19 @@ def fetch_forecast_multi_region(region_name, region_points):
     df_weighted["Region"] = region_labels.get(region_name, region_name)
     return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
-def create_lstm_input(df, feature_cols, target_col, window_size, idx_datetime):
+def create_lstm_input_dynamic(df, dt, feature_cols, window_size=24):
     X_seq = []
     for f in feature_cols:
-        # Ambil window_size jam sebelum idx_datetime
-        lag_times = [idx_datetime - pd.Timedelta(hours=i) for i in range(window_size,0,-1)]
         vals = []
-        for lt in lag_times:
-            if lt in df["Datetime"].values:
-                vals.append(df.loc[df["Datetime"]==lt, f].values[0])
+        for i in range(window_size, 0, -1):
+            lag_dt = dt - pd.Timedelta(hours=i)
+            if lag_dt in df["Datetime"].values:
+                vals.append(df.loc[df["Datetime"]==lag_dt, f].values[0])
             else:
-                # fallback: pakai terakhir historical
+                # fallback pakai nilai terakhir historical
                 vals.append(df.loc[df["Source"]=="Historical", f].ffill().iloc[-1])
         X_seq.append(vals)
-    # shape -> (1, timesteps, features)
-    X_seq = np.array(X_seq).T.reshape(1, window_size, len(feature_cols))
-    return X_seq
+    return np.array(X_seq).T.reshape(1, window_size, len(feature_cols))
 
 # -----------------------------
 # Wrapper: proses setiap region berurutan dan merge jadi satu wide table
@@ -528,53 +538,79 @@ if upload_success and st.session_state.get("forecast_running", False):
     # -----------------------------
     if "Source" not in final_df.columns:
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+    else:
+        final_df.loc[final_df["Datetime"] < start_datetime, "Source"] = "Historical"
+        final_df.loc[final_df["Datetime"] >= start_datetime, "Source"] = "Forecast"
     
-    # -----------------------------
-    # 0️⃣ Generate lag features di final_df
-    # -----------------------------
+    # Generate lag features di background
+    lag_cols_dict = {}
     for col in model_features:
-        if col not in final_df.columns:
-            base_col = col.split("_Lag")[0]  # misal "T_Relative_humidity"
-            lag_num = int(col.split("_Lag")[1])
+        if "_Lag" in col:
+            base_col, lag_num = col.rsplit("_Lag", 1)
+            lag_num = int(lag_num)
             if base_col in final_df.columns:
-                final_df[col] = final_df[base_col].shift(lag_num)
+                lag_cols_dict[col] = final_df[base_col].shift(lag_num)
             else:
-                final_df[col] = np.nan
+                lag_cols_dict[col] = np.nan
+        else:
+            lag_cols_dict[col] = final_df.get(col, np.nan)
+    
+    # Tambahkan semua kolom lag
+    final_df = pd.concat([final_df, pd.DataFrame(lag_cols_dict, index=final_df.index)], axis=1)
     
     # -----------------------------
     # 1️⃣ Loop iterative forecast
     # -----------------------------
-    window_size = 96  # jumlah lag
+    window_size = 24  # timesteps untuk LSTM
     feature_cols = model_features
     target_col = "Water_level"
     
     forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
     forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
     
+    window_size = 24
+    
     for i, idx in enumerate(forecast_indices, start=1):
         dt = final_df.at[idx, "Datetime"]
-        progress_container.markdown(f"Predicting hour {i}/{len(forecast_indices)}...")
     
-        # --- 1️⃣ buat input LSTM ---
-        X_seq = create_lstm_input(final_df, feature_cols, target_col, window_size, dt)
+        # --- 1. Buat lag features dinamis untuk jam ini ---
+        lag_dict = {}
+        for col in model_features:
+            if "_Lag" in col:
+                base_col, lag_num = col.rsplit("_Lag", 1)
+                lag_num = int(lag_num)
+                lag_dt_idx = idx - lag_num
+                if lag_dt_idx >= 0:
+                    lag_dict[col] = final_df.at[lag_dt_idx, base_col]
+                else:
+                    # fallback: nilai pertama historical
+                    lag_dict[col] = final_df[base_col].iloc[0]
+            else:
+                lag_dict[col] = final_df.at[idx, col] if col in final_df.columns else 0
     
-        # --- 2️⃣ scaling input ---
-        X_scaled = scaler_X.transform(X_seq.reshape(-1, len(feature_cols))).reshape(1, window_size, len(feature_cols))
+        # Ambil 24 jam terakhir sebelum jam prediksi saat ini
+        window_data = final_df.loc[
+            (final_df["Datetime"] < dt)
+        ].tail(window_size)
+        
+        # Pastikan semua fitur yang dibutuhkan tersedia
+        X_df = window_data[model_features].copy()
+        
+        # Jika masih ada NaN (misalnya jam baru pertama forecast), isi dengan nilai terakhir valid
+        X_df = X_df.fillna(method="ffill").fillna(method="bfill")
     
-        # --- 3️⃣ prediksi LSTM ---
+        # --- 2. Scaling & prediksi ---
+        X_scaled = scaler_X.transform(X_df)
+        X_scaled = X_scaled.reshape(1, window_size, len(model_features))
         y_scaled = model.predict(X_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
+        y_hat = max(y_hat, 0)
     
-        # batasi nilai < 0
-        if y_hat < 0: 
-            y_hat = 0
+        # --- 3. Masukkan hasil ke dataframe ---
+        final_df.at[idx, "Water_level"] = round(y_hat, 2)
     
-        # --- 4️⃣ masukkan hasil ke final_df ---
-        final_df.at[idx, "Water_level"] = round(y_hat,2)
-    
-        # update progress bar
-        step_counter += 1
-        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+        # --- 4. Update progress ---
+        progress_bar.progress(min(max(i / len(forecast_indices), 0.0), 1.0))
     
     # set session state selesai
     st.session_state["final_df"] = final_df
@@ -583,25 +619,41 @@ if upload_success and st.session_state.get("forecast_running", False):
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
-# -----------------------------
-# Display Forecast & Plot
-# -----------------------------
-result_container = st.empty()
-if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
-    final_df = st.session_state["final_df"]
-    with result_container.container():
-        st.subheader("Water Level + Climate Data with Forecast")
-        def highlight_forecast(row):
-            return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
-        
-        # Ambil semua kolom numerik
-        numeric_cols = final_df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        # Terapkan format hanya untuk kolom numerik
-        styled_df = final_df.style.apply(highlight_forecast, axis=1)\
-                                   .format({col: "{:.2f}" for col in numeric_cols})
-
-        st.dataframe(styled_df, use_container_width=True, height=500)
+    # -----------------------------
+    # Display Forecast & Plot
+    # -----------------------------
+    result_container = st.container()
+    
+    if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
+        final_df = st.session_state["final_df"]
+        with result_container:
+            st.subheader("Water Level + Climate Data with Forecast")
+    
+            
+            # 1. Buat DataFrame khusus untuk styling/display. 
+            #    Sertakan 'Datetime' dan 'Source' untuk styling dan referensi.
+            display_plus_source_cols = ["Datetime", "Source"] + display_cols
+            df_for_styling = final_df[display_plus_source_cols].copy()
+            
+            # 2. Definisikan fungsi styling
+            def highlight_forecast(row):
+                # Fungsi ini sekarang aman karena 'Source' ada di df_for_styling
+                return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
+            
+            # 3. Terapkan styling
+            styled_df = df_for_styling.style.apply(
+                highlight_forecast,
+                axis=1
+            ).format({"Water_level": "{:.2f}"})
+    
+            # 4. Sembunyikan kolom 'Source' dan kolom selain display_cols yang tidak ingin ditampilkan
+            #    Note: Kolom 'Source' harus disembunyikan agar tidak muncul di tabel.
+            styled_df = styled_df.hide(
+                 subset=["Source"], # Kolom ini digunakan hanya untuk styling, harus disembunyikan
+                 axis="columns"
+            )
+            
+            st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
         # Plot
@@ -739,6 +791,5 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col3:
             st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
-
 else:
-    result_container.empty()
+    result_container = st.empty()
