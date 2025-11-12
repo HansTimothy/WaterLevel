@@ -528,45 +528,43 @@ if upload_success and st.session_state.get("forecast_running", False):
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
     
     # Tentukan forecast horizon
-    forecast_hours = 168  # 7 hari * 24 jam
+    forecast_hours = 168  # 7 hari × 24 jam
     
-    for h in range(forecast_hours):
-        next_datetime = start_datetime + timedelta(hours=h)
-
-        # 🔹 Update teks progress (contoh: Forecasting hour 45 of 168 (Day 2 of 7))
+    # 🔹 Ambil index baris forecast yang sudah ada
+    forecast_indices = final_df.index[final_df["Source"] == "Forecast"].tolist()
+    
+    for i, idx in enumerate(forecast_indices, start=1):
+        next_datetime = final_df.at[idx, "Datetime"]
+    
         progress_container.markdown(
-            f"⏳ Forecasting hour {h+1} of {forecast_hours} "
-            f"({(h)//24 + 1} of 7 days)..."
+            f"⏳ Forecasting hour {i} of {forecast_hours} "
+            f"({(i)//24 + 1} of 7 days)..."
         )
     
-        # Ambil window terakhir sesuai window_size dan semua fitur
+        # === Ambil window terakhir (berdasarkan data yang sudah terisi) ===
         last_window = final_df[model_features].iloc[-window_size:].values
-    
-        # Scaling fitur
         last_window_scaled = scaler_X.transform(last_window)
-    
-        # Bentuk array 3D untuk LSTM: (samples, timesteps, features)
         X_seq = last_window_scaled.reshape(1, window_size, len(model_features))
-
-        # Prediksi LSTM
+    
+        # === Prediksi LSTM ===
         y_hat_scaled = model.predict(X_seq, verbose=0)
         y_hat = scaler_y.inverse_transform(y_hat_scaled)[0, 0]
-    
-        # Pastikan nilai Water_level >= 0
         y_hat = max(0, y_hat)
     
-        # Buat row baru untuk hasil forecast
-        new_row = {col: 0 for col in final_df.columns}  # row kosong
-        new_row.update({
-            "Datetime": next_datetime,
-            "Water_level": round(y_hat, 2),
-            "Source": "Forecast"
-        })
+        # === Isi nilai Water_level di baris forecast yang sesuai ===
+        final_df.at[idx, "Water_level"] = round(y_hat, 2)
     
-        # Append ke final_df
-        final_df = pd.concat([final_df, pd.DataFrame([new_row])], ignore_index=True)
+        # === Update lag agar prediksi berikutnya pakai nilai terbaru ===
+        for lag in range(95, 1, -1):
+            lag_col = f"Water_level_Lag{lag}"
+            prev_col = f"Water_level_Lag{lag-1}"
+            if lag_col in final_df.columns and prev_col in final_df.columns:
+                final_df.at[idx, lag_col] = final_df.iloc[idx - 1][prev_col]
     
-        # Update progress bar
+        if "Water_level_Lag1" in final_df.columns:
+            final_df.at[idx, "Water_level_Lag1"] = round(y_hat, 2)
+    
+        # === Update progress ===
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
     
