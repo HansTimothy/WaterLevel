@@ -530,21 +530,24 @@ if upload_success and st.session_state.get("forecast_running", False):
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
     
     # -----------------------------
-    # 0️⃣ Generate lag features di final_df
+    # 0️⃣ Generate lag features di final_df (optimized)
     # -----------------------------
+    lag_cols_dict = {}
+    
     for col in model_features:
         if col not in final_df.columns:
             if "_Lag" in col:
-                # contoh: "T_Relative_humidity_Lag61"
                 base_col, lag_num = col.rsplit("_Lag", 1)
                 lag_num = int(lag_num)
                 if base_col in final_df.columns:
-                    final_df[col] = final_df[base_col].shift(lag_num)
+                    lag_cols_dict[col] = final_df[base_col].shift(lag_num)
                 else:
-                    final_df[col] = np.nan
+                    lag_cols_dict[col] = np.nan
             else:
-                # jika kolom asli belum ada
-                final_df[col] = final_df.get(col, np.nan)
+                lag_cols_dict[col] = final_df.get(col, np.nan)
+
+# Tambahkan semua kolom sekaligus
+final_df = pd.concat([final_df, pd.DataFrame(lag_cols_dict, index=final_df.index)], axis=1)
     
     # -----------------------------
     # 1️⃣ Loop iterative forecast
@@ -564,7 +567,8 @@ if upload_success and st.session_state.get("forecast_running", False):
         X_seq = create_lstm_input(final_df, feature_cols, target_col, window_size, dt)
     
         # --- 2️⃣ scaling input ---
-        X_scaled = scaler_X.transform(X_seq.reshape(-1, len(feature_cols))).reshape(1, window_size, len(feature_cols))
+        X_df = pd.DataFrame(X_seq.reshape(-1, len(feature_cols)), columns=feature_cols)
+        X_scaled = scaler_X.transform(X_df).reshape(1, window_size, len(feature_cols))
     
         # --- 3️⃣ prediksi LSTM ---
         y_scaled = model.predict(X_scaled, verbose=0)
