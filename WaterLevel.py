@@ -532,6 +532,12 @@ if upload_success and st.session_state.get("forecast_running", False):
     
     for h in range(forecast_hours):
         next_datetime = start_datetime + timedelta(hours=h)
+
+        # 🔹 Update teks progress (contoh: Forecasting hour 45 of 168 (Day 2 of 7))
+        progress_container.markdown(
+            f"⏳ Forecasting hour {h+1} of {forecast_hours} "
+            f"({(h)//24 + 1} of 7 days)..."
+        )
     
         # Ambil window terakhir sesuai window_size dan semua fitur
         last_window = final_df[model_features].iloc[-window_size:].values
@@ -589,7 +595,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         styled_df = final_df.style.apply(highlight_forecast, axis=1)\
                                    .format({col: "{:.2f}" for col in numeric_cols})
 
-        st.dataframe(styled_df, use_container_width=True, height=500)
+        st.data_editor(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
         # Plot
