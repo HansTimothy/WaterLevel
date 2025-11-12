@@ -609,9 +609,11 @@ if upload_success and st.session_state.get("forecast_running", False):
     # -----------------------------
     # Display Forecast & Plot
     # -----------------------------
+    result_container = st.container()
+    
     if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
         final_df = st.session_state["final_df"]
-        with result_container.container():
+        with result_container:
             st.subheader("Water Level + Climate Data with Forecast")
     
             
@@ -776,3 +778,5 @@ if upload_success and st.session_state.get("forecast_running", False):
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col3:
             st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
+else:
+    result_container = st.empty()
