@@ -12,6 +12,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
 from keras.models import Sequential
 from keras.layers import LSTM, Dropout, Dense
+from keras.optimizers import Adam
 
 
 # Load LSTM model & scalers
