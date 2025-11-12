@@ -640,21 +640,19 @@ if upload_success and st.session_state.get("forecast_running", False):
             # 1. Buat DataFrame khusus untuk styling/display. 
             df_for_styling = final_df[display_cols].copy()
 
-            # 2. Round semua kolom numerik ke 2 desimal dan convert ke string
+            # 2. Ensure numeric columns are float
             numeric_cols = df_for_styling.select_dtypes(include=np.number).columns
-            for col in numeric_cols:
-                df_for_styling[col] = df_for_styling[col].map(lambda x: f"{x:.2f}")
+            df_for_styling[numeric_cols] = df_for_styling[numeric_cols].astype(float)
             
             # 3. Definisikan fungsi styling
             def highlight_forecast(row):
                 # Fungsi ini sekarang aman karena 'Source' ada di df_for_styling
                 return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
             
-            # 4. Terapkan styling
             styled_df = df_for_styling.style.apply(
                 highlight_forecast,
                 axis=1
-            ).format({"Water_level": "{:.2f}"})
+            ).format("{:.2f}")
             
             st.dataframe(styled_df, use_container_width=True, height=500)
 
