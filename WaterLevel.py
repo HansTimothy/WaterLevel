@@ -609,7 +609,6 @@ if upload_success and st.session_state.get("forecast_running", False):
     # -----------------------------
     # Display Forecast & Plot
     # -----------------------------
-    result_container = st.empty()
     if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
         final_df = st.session_state["final_df"]
         with result_container.container():
