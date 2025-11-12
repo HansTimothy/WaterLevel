@@ -66,31 +66,6 @@ rounded_now = gmt7_now.replace(minute=0, second=0, microsecond=0)
 if gmt7_now.minute > 0 or gmt7_now.second > 0:
     rounded_now += timedelta(hours=1)
 
-# Tentukan start/end historical dan forecast secara dinamis
-if start_datetime > rounded_now:
-    # Full future
-    hist_start = start_datetime - timedelta(hours=96)
-    hist_end = start_datetime
-    fore_start = start_datetime
-    fore_end = start_datetime + timedelta(hours=168)
-
-elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
-    # Hybrid
-    hist_start = start_datetime - timedelta(hours=96)
-    hist_end = start_datetime
-    fore_start = rounded_now  # forecast dimulai dari now
-    fore_end = start_datetime + timedelta(hours=168)
-
-else:
-    # Full past
-    hist_start = start_datetime - timedelta(hours=96)
-    hist_end = start_datetime
-    fore_start = start_datetime
-    fore_end = rounded_now
-
-st.write(f"Historical: {hist_start} → {hist_end}")
-st.write(f"Forecast: {fore_start} → {fore_end}")
-
 # -----------------------------
 # Select forecast start datetime
 # -----------------------------
@@ -101,6 +76,25 @@ selected_hour_str = st.selectbox("Time (WIB)", hour_options, index=len(hour_opti
 selected_hour = int(selected_hour_str.split(":")[0])
 start_datetime = datetime.combine(selected_date, time(selected_hour, 0, 0))
 st.write(f"Start datetime (GMT+7): {start_datetime}")
+
+if start_datetime > rounded_now:
+    # Full future
+    hist_start = start_datetime - timedelta(hours=96)
+    hist_end = start_datetime
+    fore_start = start_datetime
+    fore_end = start_datetime + timedelta(hours=168)
+elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
+    # Hybrid: sebagian historical, sebagian forecast
+    hist_start = start_datetime - timedelta(hours=96)
+    hist_end = start_datetime
+    fore_start = rounded_now
+    fore_end = start_datetime + timedelta(hours=168)
+else:
+    # Full past / historical
+    hist_start = start_datetime - timedelta(hours=96)
+    hist_end = start_datetime
+    fore_start = start_datetime
+    fore_end = rounded_now
 
 # -----------------------------
 # Instructions for upload
@@ -458,19 +452,22 @@ if upload_success and st.session_state.get("forecast_running", False):
         region_label = region_labels.get(region_name, region_name)
         progress_container.markdown(f"Fetching data for **{region_label}** ...")
 
-        # Fetch historical
-        hist_df = fetch_historical_multi_region(region_name, region_points,
-                                               start_datetime - timedelta(hours=96),
-                                               start_datetime)
-        step_counter += 1
-        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+        # Historical
+        hist_df = fetch_historical_multi_region(region_name, region_points, hist_start, hist_end)
+        hist_df["Source"] = "Historical"
+                step_counter += 1
+                progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
 
 
         # Fetch forecast
-        fore_df = fetch_forecast_multi_region(region_name, region_points)
-        step_counter += 1
-        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
-
+        if fore_start < rounded_now:
+            # fallback pakai historical
+            fore_df = hist_df[hist_df["Datetime"] >= fore_start].copy()
+            fore_df["Source"] = "Forecast"
+        else:
+            fore_df = fetch_forecast_multi_region(region_name, region_points)
+            fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
+            fore_df["Source"] = "Forecast"
 
         # Gabungkan historical + forecast jadi satu (Datetime + var)
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
