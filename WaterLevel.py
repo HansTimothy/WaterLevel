@@ -570,6 +570,15 @@ if upload_success and st.session_state.get("forecast_running", False):
     
     for i, idx in enumerate(forecast_indices, start=1):
         dt = final_df.at[idx, "Datetime"]
+
+        # Hitung day ke-n dan hour ke-n
+        day_num = ((i-1) // 24) + 1
+        hour_in_day = ((i-1) % 24) + 1
+        
+        progress_container.markdown(
+            f"Predicting **hour {i}/{total_forecast_hours}** "
+            f"→ Day {day_num}/7, Hour {hour_in_day}/24"
+        )
         
         # Buat input dinamis untuk LSTM
         X_seq = create_lstm_input_dynamic(final_df, dt, model_features, window_size)
