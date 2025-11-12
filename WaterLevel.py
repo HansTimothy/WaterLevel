@@ -592,7 +592,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             "Source"
         ]
         # Ambil hanya kolom yang benar-benar ada
-        display_df = final_df.copy()
+        display_df = final_df[main_columns].copy()
 
 
         # 🔹 Highlight baris forecast
