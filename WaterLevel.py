@@ -14,6 +14,18 @@ from keras.models import Sequential
 from keras.layers import LSTM, Dropout, Dense
 from keras.optimizers import Adam
 
+display_cols = [
+    # T_ region
+    "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
+    # SL_ region
+    "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
+    # MB_ region
+    "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
+    # MU_ region
+    "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure",
+    # Water level
+    "Water_level"
+]
 
 # Load LSTM model & scalers
 scaler_X = joblib.load("scaler_X.pkl")
@@ -369,22 +381,19 @@ def fetch_forecast_multi_region(region_name, region_points):
     df_weighted["Region"] = region_labels.get(region_name, region_name)
     return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
-def create_lstm_input(df, feature_cols, target_col, window_size, idx_datetime):
+def create_lstm_input_dynamic(df, dt, feature_cols, window_size=24):
     X_seq = []
     for f in feature_cols:
-        # Ambil window_size jam sebelum idx_datetime
-        lag_times = [idx_datetime - pd.Timedelta(hours=i) for i in range(window_size,0,-1)]
         vals = []
-        for lt in lag_times:
-            if lt in df["Datetime"].values:
-                vals.append(df.loc[df["Datetime"]==lt, f].values[0])
+        for i in range(window_size, 0, -1):
+            lag_dt = dt - pd.Timedelta(hours=i)
+            if lag_dt in df["Datetime"].values:
+                vals.append(df.loc[df["Datetime"]==lag_dt, f].values[0])
             else:
-                # fallback: pakai terakhir historical
+                # fallback pakai nilai terakhir historical
                 vals.append(df.loc[df["Source"]=="Historical", f].ffill().iloc[-1])
         X_seq.append(vals)
-    # shape -> (1, timesteps, features)
-    X_seq = np.array(X_seq).T.reshape(1, window_size, len(feature_cols))
-    return X_seq
+    return np.array(X_seq).T.reshape(1, window_size, len(feature_cols))
 
 # -----------------------------
 # Wrapper: proses setiap region berurutan dan merge jadi satu wide table
@@ -529,25 +538,24 @@ if upload_success and st.session_state.get("forecast_running", False):
     # -----------------------------
     if "Source" not in final_df.columns:
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+    else:
+        final_df.loc[final_df["Datetime"] < start_datetime, "Source"] = "Historical"
+        final_df.loc[final_df["Datetime"] >= start_datetime, "Source"] = "Forecast"
     
-    # -----------------------------
-    # 0️⃣ Generate lag features di final_df (optimized)
-    # -----------------------------
+    # Generate lag features di background
     lag_cols_dict = {}
-    
     for col in model_features:
-        if col not in final_df.columns:
-            if "_Lag" in col:
-                base_col, lag_num = col.rsplit("_Lag", 1)
-                lag_num = int(lag_num)
-                if base_col in final_df.columns:
-                    lag_cols_dict[col] = final_df[base_col].shift(lag_num)
-                else:
-                    lag_cols_dict[col] = np.nan
+        if "_Lag" in col:
+            base_col, lag_num = col.rsplit("_Lag", 1)
+            lag_num = int(lag_num)
+            if base_col in final_df.columns:
+                lag_cols_dict[col] = final_df[base_col].shift(lag_num)
             else:
-                lag_cols_dict[col] = final_df.get(col, np.nan)
-
-    # Tambahkan semua kolom sekaligus
+                lag_cols_dict[col] = np.nan
+        else:
+            lag_cols_dict[col] = final_df.get(col, np.nan)
+    
+    # Tambahkan semua kolom lag
     final_df = pd.concat([final_df, pd.DataFrame(lag_cols_dict, index=final_df.index)], axis=1)
     
     # -----------------------------
@@ -562,35 +570,20 @@ if upload_success and st.session_state.get("forecast_running", False):
     
     for i, idx in enumerate(forecast_indices, start=1):
         dt = final_df.at[idx, "Datetime"]
-        progress_container.markdown(f"Predicting hour {i}/{len(forecast_indices)}...")
-    
-        # --- 1️⃣ buat input LSTM ---
-        X_seq = []
-        for f in feature_cols:
-            lag_times = [dt - pd.Timedelta(hours=i) for i in range(window_size,0,-1)]
-            vals = []
-            for lt in lag_times:
-                if lt in final_df["Datetime"].values:
-                    vals.append(final_df.loc[final_df["Datetime"]==lt, f].values[0])
-                else:
-                    # fallback: pakai nilai terakhir historical
-                    vals.append(final_df.loc[final_df["Source"]=="Historical", f].ffill().iloc[-1])
-            X_seq.append(vals)
-        X_seq = np.array(X_seq).T.reshape(1, window_size, len(feature_cols))
-    
-        # --- 2️⃣ scaling input ---
-        X_df = pd.DataFrame(X_seq.reshape(-1, len(feature_cols)), columns=feature_cols)
-        X_scaled = scaler_X.transform(X_df).reshape(1, window_size, len(feature_cols))
-    
-        # --- 3️⃣ prediksi LSTM ---
+        
+        # Buat input dinamis untuk LSTM
+        X_seq = create_lstm_input_dynamic(final_df, dt, model_features, window_size)
+        
+        # Scaling
+        X_df = pd.DataFrame(X_seq.reshape(-1, len(model_features)), columns=model_features)
+        X_scaled = scaler_X.transform(X_df).reshape(1, window_size, len(model_features))
+        
+        # Prediksi
         y_scaled = model.predict(X_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
-    
-        # batasi nilai < 0
-        if y_hat < 0: 
-            y_hat = 0
-    
-        # --- 4️⃣ masukkan hasil ke final_df ---
+        y_hat = max(y_hat, 0)
+        
+        # Masukkan hasil
         final_df.at[idx, "Water_level"] = round(y_hat,2)
     
         # update progress bar
@@ -619,9 +612,11 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         numeric_cols = final_df.select_dtypes(include=[np.number]).columns.tolist()
         
         # Terapkan format hanya untuk kolom numerik
-        styled_df = final_df.style.apply(highlight_forecast, axis=1)\
-                                   .format({col: "{:.2f}" for col in numeric_cols})
-
+        styled_df = final_df[display_cols].style.apply(
+            lambda row: ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row],
+            axis=1
+        ).format({"Water_level": "{:.2f}"})
+        
         st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
