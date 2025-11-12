@@ -457,14 +457,23 @@ if upload_success and st.session_state.get("forecast_running", False):
         hist_df["Source"] = "Historical"
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
-
+        
         # --- Forecast ---
-        if fore_start < rounded_now:
-            # Hybrid / full past: gunakan historical fallback untuk jam forecast sebelum rounded_now
-            fore_df = hist_df[hist_df["Datetime"] >= fore_start].copy()
+        fore_df = pd.DataFrame()
+        
+        if start_datetime > rounded_now:
+            # FULL FUTURE
+            fore_df = fetch_forecast_multi_region(region_name, region_points)
+            fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
             fore_df["Source"] = "Forecast"
+        
+        elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
+            # HYBRID
+            # Jam start_datetime → rounded_now: historical API
+            hist_fore_df = hist_df[hist_df["Datetime"] >= fore_start].copy()
+            hist_fore_df["Source"] = "Forecast"
             
-            # Jika ada jam forecast di masa depan, ambil dari API
+            # Jam > rounded_now → forecast API
             if fore_end > rounded_now:
                 api_fore_df = fetch_forecast_multi_region(region_name, region_points)
                 api_fore_df = api_fore_df[
@@ -472,13 +481,15 @@ if upload_success and st.session_state.get("forecast_running", False):
                     (api_fore_df["Datetime"] <= fore_end)
                 ]
                 api_fore_df["Source"] = "Forecast"
-                fore_df = pd.concat([fore_df, api_fore_df], ignore_index=True)
+                fore_df = pd.concat([hist_fore_df, api_fore_df], ignore_index=True)
+            else:
+                fore_df = hist_fore_df
+        
         else:
-            # Full future: langsung pakai API
-            fore_df = fetch_forecast_multi_region(region_name, region_points)
-            fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
+            # FULL PAST
+            fore_df = fetch_historical_multi_region(region_name, region_points, fore_start, fore_end)
             fore_df["Source"] = "Forecast"
-
+    
         # Gabungkan historical + forecast jadi satu (Datetime + var)
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
         if combined_df.empty:
