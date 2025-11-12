@@ -10,3 +10,4 @@ XlsxWriter
 openpyxl
 reportlab
 scipy
+keras
