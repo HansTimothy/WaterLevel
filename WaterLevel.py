@@ -19,17 +19,18 @@ from keras.optimizers import Adam
 scaler_X = joblib.load("scaler_X.pkl")
 scaler_y = joblib.load("scaler_y.pkl")
 
-n_features = scaler_X.n_features_in_  # jumlah fitur input
-timesteps = 24  # sesuaikan dengan data/memori LSTM lama
+# Jumlah fitur input
+n_features = scaler_X.n_features_in_  # misal 725
+timesteps = 24  # sesuai data
 
-# Rebuild model
+# Bangun model LSTM
 model = Sequential()
 model.add(LSTM(128, input_shape=(timesteps, n_features), return_sequences=True))
 model.add(Dropout(0.3))
 model.add(LSTM(64))
 model.add(Dense(1))
 
-# Compile model
+# Compile model dengan Adam optimizer
 optimizer = Adam(learning_rate=0.0005)
 model.compile(optimizer=optimizer, loss='mse')
 
@@ -552,7 +553,7 @@ if upload_success and st.session_state.get("forecast_running", False):
     # -----------------------------
     # 1️⃣ Loop iterative forecast
     # -----------------------------
-    window_size = 96  # jumlah lag
+    window_size = 24  # timesteps untuk LSTM
     feature_cols = model_features
     target_col = "Water_level"
     
@@ -564,7 +565,18 @@ if upload_success and st.session_state.get("forecast_running", False):
         progress_container.markdown(f"Predicting hour {i}/{len(forecast_indices)}...")
     
         # --- 1️⃣ buat input LSTM ---
-        X_seq = create_lstm_input(final_df, feature_cols, target_col, window_size, dt)
+        X_seq = []
+        for f in feature_cols:
+            lag_times = [dt - pd.Timedelta(hours=i) for i in range(window_size,0,-1)]
+            vals = []
+            for lt in lag_times:
+                if lt in final_df["Datetime"].values:
+                    vals.append(final_df.loc[final_df["Datetime"]==lt, f].values[0])
+                else:
+                    # fallback: pakai nilai terakhir historical
+                    vals.append(final_df.loc[final_df["Source"]=="Historical", f].ffill().iloc[-1])
+            X_seq.append(vals)
+        X_seq = np.array(X_seq).T.reshape(1, window_size, len(feature_cols))
     
         # --- 2️⃣ scaling input ---
         X_df = pd.DataFrame(X_seq.reshape(-1, len(feature_cols)), columns=feature_cols)
