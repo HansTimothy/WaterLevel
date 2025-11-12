@@ -452,19 +452,29 @@ if upload_success and st.session_state.get("forecast_running", False):
         region_label = region_labels.get(region_name, region_name)
         progress_container.markdown(f"Fetching data for **{region_label}** ...")
 
-        # Historical
+        # --- Historical ---
         hist_df = fetch_historical_multi_region(region_name, region_points, hist_start, hist_end)
         hist_df["Source"] = "Historical"
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
 
-
-        # Fetch forecast
+        # --- Forecast ---
         if fore_start < rounded_now:
-            # fallback pakai historical
+            # Hybrid / full past: gunakan historical fallback untuk jam forecast sebelum rounded_now
             fore_df = hist_df[hist_df["Datetime"] >= fore_start].copy()
             fore_df["Source"] = "Forecast"
+            
+            # Jika ada jam forecast di masa depan, ambil dari API
+            if fore_end > rounded_now:
+                api_fore_df = fetch_forecast_multi_region(region_name, region_points)
+                api_fore_df = api_fore_df[
+                    (api_fore_df["Datetime"] > rounded_now) & 
+                    (api_fore_df["Datetime"] <= fore_end)
+                ]
+                api_fore_df["Source"] = "Forecast"
+                fore_df = pd.concat([fore_df, api_fore_df], ignore_index=True)
         else:
+            # Full future: langsung pakai API
             fore_df = fetch_forecast_multi_region(region_name, region_points)
             fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
             fore_df["Source"] = "Forecast"
