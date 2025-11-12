@@ -494,7 +494,7 @@ if upload_success and st.session_state.get("forecast_running", False):
     st.session_state["forecast_running"] = False
 
     # -----------------------------
-    # 4️⃣ Iterative forecast dengan lag features
+    # 4️⃣ Iterative forecast dengan dynamic lag
     # -----------------------------
     model_features = []
     
@@ -535,62 +535,52 @@ if upload_success and st.session_state.get("forecast_running", False):
     # Water_level_ group
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
-
-    # -----------------------------
-    # 0️⃣ Precompute semua lag columns sebelum iterative forecast
-    # -----------------------------
-    lag_cols_dict = {}
-    for col in model_features:
-        if "_Lag" in col:
-            base_col, lag_num = col.rsplit("_Lag", 1)
-            lag_num = int(lag_num)
-            if base_col in final_df.columns:
-                lag_cols_dict[col] = final_df[base_col].shift(lag_num).round(2)
-            else:
-                lag_cols_dict[col] = np.nan
-        else:
-            lag_cols_dict[col] = final_df.get(col, np.nan)
     
-    # Tambahkan lag columns ke final_df
-    final_df = pd.concat([final_df, pd.DataFrame(lag_cols_dict, index=final_df.index)], axis=1)
-    
-    # Pastikan kolom Source sudah benar
+    # Pastikan kolom Source
     final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
-    
-    window_size = 24  # timesteps untuk LSTM
-    feature_cols = model_features
-    target_col = "Water_level"
-    
-    # Pastikan final_df terurut berdasarkan datetime
     final_df = final_df.sort_values("Datetime").reset_index(drop=True)
     
-    # Pastikan kolom Source sudah benar
-    if "Source" not in final_df.columns:
-        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
-    else:
-        final_df.loc[final_df["Datetime"] < start_datetime, "Source"] = "Historical"
-        final_df.loc[final_df["Datetime"] >= start_datetime, "Source"] = "Forecast"
-    
-    # Tentukan indices untuk forecast
+    # Tentukan indices forecast
     forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
-    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
+    forecast_indices = final_df.index[forecast_mask]
     
     total_forecast_steps = len(forecast_indices)
     progress_container.markdown("Forecasting water level 7 days iteratively...")
     
+    # Fungsi bantu untuk dynamic lag
+    def get_lag_value(df, base_col, current_idx, lag_num):
+        idx_lag = current_idx - lag_num
+        if idx_lag >= 0:
+            val = df.at[idx_lag, base_col]
+            if pd.notna(val):
+                return val
+        # fallback ke nilai terakhir historical
+        return df.loc[df["Source"]=="Historical", base_col].ffill().iloc[-1]
+    
+    # Loop forecast
     for i, idx in enumerate(forecast_indices, start=1):
-        dt = final_df.at[idx, "Datetime"]
+        # --- 1. Buat input features dinamis ---
+        X_dict = {}
+        for col in model_features:
+            if "_Lag" in col:
+                base_col, lag_num = col.rsplit("_Lag", 1)
+                lag_num = int(lag_num)
+                X_dict[col] = get_lag_value(final_df, base_col, idx, lag_num)
+            else:
+                X_dict[col] = final_df.at[idx, col] if col in final_df.columns else 0
     
-        # --- 1. Ambil 24 jam terakhir sebelum dt sebagai input LSTM ---
-        window_data = final_df.loc[final_df["Datetime"] < dt].tail(window_size)
-        X_df = window_data[model_features].copy()
+        # Ubah ke DataFrame
+        X_df = pd.DataFrame([X_dict])
     
-        # Pastikan semua fitur terisi
-        X_df = X_df.fillna(method="ffill").fillna(method="bfill")
+        # Ambil 24 jam terakhir
+        X_df_window = X_df.values.reshape(1, 1, len(model_features))  # reshape awal
     
         # --- 2. Scaling & reshape untuk LSTM ---
-        X_scaled = scaler_X.transform(X_df)
-        X_scaled = X_scaled.reshape(1, window_size, len(model_features))  # (1, 24, n_features)
+        # Gunakan window terakhir dari final_df untuk LSTM
+        window_data = final_df.loc[:idx-1, model_features].tail(24)
+        window_data = window_data.fillna(method="ffill").fillna(method="bfill")
+        X_scaled = scaler_X.transform(window_data)
+        X_scaled = X_scaled.reshape(1, 24, len(model_features))
     
         # --- 3. Prediksi ---
         y_scaled = model.predict(X_scaled, verbose=0)
@@ -599,12 +589,13 @@ if upload_success and st.session_state.get("forecast_running", False):
     
         # --- 4. Masukkan hasil ke dataframe ---
         final_df.at[idx, "Water_level"] = round(y_hat, 2)
+        final_df.at[idx, "Source"] = "Forecast"
     
         # --- 5. Update progress ---
         progress_container.markdown(f"Forecasting Water Level **(Hour {i}/{total_forecast_steps})**")
         progress_bar.progress(min(max(i / total_forecast_steps, 0.0), 1.0))
     
-    # set session state selesai
+    # Selesai
     st.session_state["final_df"] = final_df
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
