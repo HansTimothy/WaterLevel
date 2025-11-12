@@ -66,6 +66,31 @@ rounded_now = gmt7_now.replace(minute=0, second=0, microsecond=0)
 if gmt7_now.minute > 0 or gmt7_now.second > 0:
     rounded_now += timedelta(hours=1)
 
+# Tentukan start/end historical dan forecast secara dinamis
+if start_datetime > rounded_now:
+    # Full future
+    hist_start = start_datetime - timedelta(hours=96)
+    hist_end = start_datetime
+    fore_start = start_datetime
+    fore_end = start_datetime + timedelta(hours=168)
+
+elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
+    # Hybrid
+    hist_start = start_datetime - timedelta(hours=96)
+    hist_end = start_datetime
+    fore_start = rounded_now  # forecast dimulai dari now
+    fore_end = start_datetime + timedelta(hours=168)
+
+else:
+    # Full past
+    hist_start = start_datetime - timedelta(hours=96)
+    hist_end = start_datetime
+    fore_start = start_datetime
+    fore_end = rounded_now
+
+st.write(f"Historical: {hist_start} → {hist_end}")
+st.write(f"Forecast: {fore_start} → {fore_end}")
+
 # -----------------------------
 # Select forecast start datetime
 # -----------------------------
