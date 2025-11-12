@@ -589,7 +589,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         styled_df = final_df.style.apply(highlight_forecast, axis=1)\
                                    .format({col: "{:.2f}" for col in numeric_cols})
 
-        st.dataframe(styled_df, use_container_width=True)
+        st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
         # Plot
