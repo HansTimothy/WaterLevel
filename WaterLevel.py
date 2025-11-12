@@ -568,36 +568,39 @@ if upload_success and st.session_state.get("forecast_running", False):
     forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
     forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
     
+    window_size = 24
+    
     for i, idx in enumerate(forecast_indices, start=1):
         dt = final_df.at[idx, "Datetime"]
-
-        # Hitung day ke-n dan hour ke-n
-        day_num = ((i-1) // 24) + 1
-        hour_in_day = ((i-1) % 24) + 1
-        
-        progress_container.markdown(
-            f"Forecasting **hour {i} of {total_forecast_hours}** "
-            f"(Day {day_num})"
-        )
-        
-        # Buat input dinamis untuk LSTM
-        X_seq = create_lstm_input_dynamic(final_df, dt, model_features, window_size)
-        
-        # Scaling
-        X_df = pd.DataFrame(X_seq.reshape(-1, len(model_features)), columns=model_features)
+    
+        # --- 1. Buat lag features dinamis untuk jam ini ---
+        lag_dict = {}
+        for col in model_features:
+            if "_Lag" in col:
+                base_col, lag_num = col.rsplit("_Lag", 1)
+                lag_num = int(lag_num)
+                lag_dt_idx = idx - lag_num
+                if lag_dt_idx >= 0:
+                    lag_dict[col] = final_df.at[lag_dt_idx, base_col]
+                else:
+                    # fallback: nilai pertama historical
+                    lag_dict[col] = final_df[base_col].iloc[0]
+            else:
+                lag_dict[col] = final_df.at[idx, col] if col in final_df.columns else 0
+    
+        X_df = pd.DataFrame([lag_dict], columns=model_features)
+    
+        # --- 2. Scaling & prediksi ---
         X_scaled = scaler_X.transform(X_df).reshape(1, window_size, len(model_features))
-        
-        # Prediksi
         y_scaled = model.predict(X_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
         y_hat = max(y_hat, 0)
-        
-        # Masukkan hasil
-        final_df.at[idx, "Water_level"] = round(y_hat,2)
     
-        # update progress bar
-        step_counter += 1
-        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+        # --- 3. Masukkan hasil ke dataframe ---
+        final_df.at[idx, "Water_level"] = round(y_hat, 2)
+    
+        # --- 4. Update progress ---
+        progress_bar.progress(min(max(i / len(forecast_indices), 0.0), 1.0))
     
     # set session state selesai
     st.session_state["final_df"] = final_df
