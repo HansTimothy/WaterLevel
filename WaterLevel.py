@@ -588,10 +588,20 @@ if upload_success and st.session_state.get("forecast_running", False):
             else:
                 lag_dict[col] = final_df.at[idx, col] if col in final_df.columns else 0
     
-        X_df = pd.DataFrame([lag_dict], columns=model_features)
+        # Ambil 24 jam terakhir sebelum jam prediksi saat ini
+        window_data = final_df.loc[
+            (final_df["Datetime"] < dt)
+        ].tail(window_size)
+        
+        # Pastikan semua fitur yang dibutuhkan tersedia
+        X_df = window_data[model_features].copy()
+        
+        # Jika masih ada NaN (misalnya jam baru pertama forecast), isi dengan nilai terakhir valid
+        X_df = X_df.fillna(method="ffill").fillna(method="bfill")
     
         # --- 2. Scaling & prediksi ---
-        X_scaled = scaler_X.transform(X_df).reshape(1, window_size, len(model_features))
+        X_scaled = scaler_X.transform(X_df)
+        X_scaled = X_scaled.reshape(1, window_size, len(model_features))
         y_scaled = model.predict(X_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
         y_hat = max(y_hat, 0)
