@@ -536,6 +536,27 @@ if upload_success and st.session_state.get("forecast_running", False):
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
 
+    # -----------------------------
+    # 0️⃣ Precompute semua lag columns sebelum iterative forecast
+    # -----------------------------
+    lag_cols_dict = {}
+    for col in model_features:
+        if "_Lag" in col:
+            base_col, lag_num = col.rsplit("_Lag", 1)
+            lag_num = int(lag_num)
+            if base_col in final_df.columns:
+                lag_cols_dict[col] = final_df[base_col].shift(lag_num).round(2)
+            else:
+                lag_cols_dict[col] = np.nan
+        else:
+            lag_cols_dict[col] = final_df.get(col, np.nan)
+    
+    # Tambahkan lag columns ke final_df
+    final_df = pd.concat([final_df, pd.DataFrame(lag_cols_dict, index=final_df.index)], axis=1)
+    
+    # Pastikan kolom Source sudah benar
+    final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+    
     window_size = 24  # timesteps untuk LSTM
     feature_cols = model_features
     target_col = "Water_level"
