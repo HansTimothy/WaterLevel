@@ -561,63 +561,71 @@ if upload_success and st.session_state.get("forecast_running", False):
     # -----------------------------
     # 1️⃣ Loop iterative forecast
     # -----------------------------
-    window_size = 24  # timesteps untuk LSTM
-    feature_cols = model_features
+    window_size = 24  # sesuai input timesteps model
     target_col = "Water_level"
+    feature_cols = model_features
+
+    forecast_hours = 168
+    forecast_start_idx = final_df[final_df["Datetime"] == start_datetime].index[0]
     
-    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
-    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
-    
-    window_size = 24
-    
-    for i, idx in enumerate(forecast_indices, start=1):
-        dt = final_df.at[idx, "Datetime"]
-    
-        # --- 1. Buat lag features dinamis untuk jam ini ---
-        lag_dict = {}
-        for col in model_features:
+    for step in range(forecast_hours):
+        current_dt = start_datetime + timedelta(hours=step)
+        current_idx = forecast_start_idx + step
+
+        # --- 1️⃣ Ambil 96 jam terakhir (lag input) ---
+        past_window = final_df.loc[
+            (final_df["Datetime"] < current_dt)
+        ].tail(96)
+
+        # Pastikan semua fitur ada
+        if len(past_window) < 96:
+            continue
+
+        # Buat dataframe berisi semua fitur lag
+        lag_features = {}
+        for col in feature_cols:
             if "_Lag" in col:
                 base_col, lag_num = col.rsplit("_Lag", 1)
                 lag_num = int(lag_num)
-                lag_dt_idx = idx - lag_num
-                if lag_dt_idx >= 0:
-                    lag_dict[col] = final_df.at[lag_dt_idx, base_col]
+                lag_dt = current_dt - timedelta(hours=lag_num)
+                match = final_df.loc[final_df["Datetime"] == lag_dt, base_col]
+                if not match.empty:
+                    lag_features[col] = match.values[0]
                 else:
-                    # fallback: nilai pertama historical
-                    lag_dict[col] = final_df[base_col].iloc[0]
+                    # fallback ke nilai terakhir historis
+                    lag_features[col] = final_df.loc[
+                        final_df["Datetime"] < start_datetime, base_col
+                    ].ffill().iloc[-1]
             else:
-                lag_dict[col] = final_df.at[idx, col] if col in final_df.columns else 0
-    
-        # Ambil 24 jam terakhir sebelum jam prediksi saat ini
-        window_data = final_df.loc[
-            (final_df["Datetime"] < dt)
-        ].tail(window_size)
-        
-        # Pastikan semua fitur yang dibutuhkan tersedia
-        X_df = window_data[model_features].copy()
-        
-        # Jika masih ada NaN (misalnya jam baru pertama forecast), isi dengan nilai terakhir valid
+                lag_features[col] = final_df.loc[
+                    final_df["Datetime"] < current_dt, col
+                ].ffill().iloc[-1] if col in final_df.columns else 0
+
+        X_df = pd.DataFrame([lag_features])[feature_cols]
         X_df = X_df.fillna(method="ffill").fillna(method="bfill")
-    
-        # --- 2. Scaling & prediksi ---
+
+        # --- 2️⃣ Scaling & prediksi ---
         X_scaled = scaler_X.transform(X_df)
-        X_scaled = X_scaled.reshape(1, window_size, len(model_features))
+        X_scaled = X_scaled.reshape(1, 1, len(feature_cols))  # hanya 1 step
         y_scaled = model.predict(X_scaled, verbose=0)
-        y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
+        y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1, 1))[0, 0]
         y_hat = max(y_hat, 0)
-    
-        # --- 3. Masukkan hasil ke dataframe ---
-        final_df.at[idx, "Water_level"] = round(y_hat, 2)
-    
-        # --- 4. Update progress ---
-        progress_bar.progress(min(max(i / len(forecast_indices), 0.0), 1.0))
-    
-    # set session state selesai
-    st.session_state["final_df"] = final_df
-    st.session_state["forecast_done"] = True
-    st.session_state["forecast_running"] = False
-    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
-    progress_bar.progress(1.0)
+
+        # --- 3️⃣ Masukkan hasil prediksi ke dataframe ---
+        if current_idx < len(final_df):
+            final_df.at[current_idx, "Water_level"] = round(y_hat, 2)
+        else:
+            final_df.loc[len(final_df)] = {
+                "Datetime": current_dt,
+                "Water_level": round(y_hat, 2),
+                "Source": "Forecast"
+            }
+
+        # --- 4️⃣ Tambahkan hasil prediksi agar bisa dipakai di iterasi berikutnya ---
+        final_df = final_df.sort_values("Datetime").reset_index(drop=True)
+
+        # --- 5️⃣ Update progress ---
+        progress_bar.progress(min(max((step + 1) / forecast_hours, 0.0), 1.0))
 
     # -----------------------------
     # Display Forecast & Plot
