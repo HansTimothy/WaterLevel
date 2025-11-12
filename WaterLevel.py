@@ -563,8 +563,9 @@ if upload_success and st.session_state.get("forecast_running", False):
         if len(hist_part) < window_size:
             continue  # belum cukup data
     
-        X_seq = hist_part[model_features].values
-        X_seq_scaled = scaler_X.transform(X_seq)
+        X_seq_df = pd.DataFrame([hist_part[model_features].iloc[-window_size:].values.flatten()],
+                        columns=model_features)
+        X_seq_scaled = scaler_X.transform(X_seq_df)
         X_seq_scaled = X_seq_scaled.reshape(1, window_size, len(model_features))
     
         # Prediksi
