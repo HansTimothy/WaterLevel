@@ -481,10 +481,30 @@ if upload_success and st.session_state.get("forecast_running", False):
     final_df = create_lag_features(final_df, lag_cols, max_lag=95)
     final_df.fillna(method='bfill', inplace=True)  # isi NaN awal
     
-    # 4️⃣ Iterative forecast
+    # -----------------------------
+    # 4️⃣ Iterative forecast (perbaikan)
+    # -----------------------------
     progress_container.markdown("Forecasting water level 7 days iteratively...")
+    
+    # Pastikan ada baris forecast
+    forecast_hours = 168  # 7 hari × 24 jam
+    if "Source" not in final_df.columns:
+        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+    
+    forecast_indices = final_df.index[final_df["Source"] == "Forecast"].tolist()
+    if not forecast_indices:
+        last_time = final_df["Datetime"].max()
+        forecast_rows = pd.DataFrame({
+            "Datetime": [last_time + timedelta(hours=i+1) for i in range(forecast_hours)],
+            "Source": ["Forecast"]*forecast_hours,
+            "Water_level": [np.nan]*forecast_hours
+        })
+        final_df = pd.concat([final_df, forecast_rows], ignore_index=True)
+        forecast_indices = final_df.index[final_df["Source"] == "Forecast"].tolist()
+    
+    # List fitur untuk model
     model_features = []
-
+    
     # T_ group
     for i in range(61, 96):
         model_features.append(f"T_Relative_humidity_Lag{i}")
@@ -522,26 +542,20 @@ if upload_success and st.session_state.get("forecast_running", False):
     # Water_level_ group
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
-
-    # Pastikan kolom Source ada
-    if "Source" not in final_df.columns:
-        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
     
-    # Tentukan forecast horizon
-    forecast_hours = 168  # 7 hari × 24 jam
+    # Pastikan semua kolom ada
+    model_features = [col for col in model_features if col in final_df.columns]
     
-    # 🔹 Ambil index baris forecast yang sudah ada
-    forecast_indices = final_df.index[final_df["Source"] == "Forecast"].tolist()
-    
+    # Iterative forecast per baris
     for i, idx in enumerate(forecast_indices, start=1):
         next_datetime = final_df.at[idx, "Datetime"]
     
         progress_container.markdown(
             f"⏳ Forecasting hour {i} of {forecast_hours} "
-            f"({(i)//24 + 1} of 7 days)..."
+            f"({(i-1)//24 + 1} of 7 days)..."
         )
     
-        # 🔹 Ambil window terakhir dari data sebelum jam ini (termasuk prediksi sebelumnya)
+        # Ambil window terakhir sebelum jam ini
         hist_part = final_df.loc[final_df["Datetime"] < next_datetime].tail(window_size)
         if len(hist_part) < window_size:
             continue  # belum cukup data
@@ -550,26 +564,27 @@ if upload_success and st.session_state.get("forecast_running", False):
         X_seq_scaled = scaler_X.transform(X_seq)
         X_seq_scaled = X_seq_scaled.reshape(1, window_size, len(model_features))
     
-        # 🔹 Prediksi
+        # Prediksi
         y_hat_scaled = model.predict(X_seq_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_hat_scaled)[0, 0]
         y_hat = max(0, y_hat)
     
-        # 🔹 Simpan hasil prediksi
+        # Simpan hasil prediksi
         final_df.at[idx, "Water_level"] = round(y_hat, 2)
     
-        # 🔹 Update lag kolom untuk jam berikutnya
+        # Update lag kolom per baris
         for lag in range(95, 0, -1):
             lag_col = f"Water_level_Lag{lag}"
+            if lag_col not in final_df.columns:
+                continue
             if lag == 1:
-                final_df.loc[final_df["Datetime"] >= next_datetime, lag_col] = y_hat
+                final_df.at[idx, lag_col] = y_hat
             else:
                 prev_col = f"Water_level_Lag{lag-1}"
-                if prev_col in final_df.columns:
-                    final_df.loc[final_df["Datetime"] >= next_datetime, lag_col] = \
-                        final_df.loc[final_df["Datetime"] < next_datetime, prev_col].iloc[-1]
+                prev_val = final_df.at[idx-1, prev_col] if idx > 0 and prev_col in final_df.columns else y_hat
+                final_df.at[idx, lag_col] = prev_val
     
-        # 🔹 Update progress bar
+        # Update progress bar
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
     
@@ -581,7 +596,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
     final_df = st.session_state["final_df"]
     with result_container.container():
         st.subheader("Water Level + Climate Data with Forecast")
-
+        
         # 🔹 Pilih hanya kolom utama (tanpa lag)
         main_columns = [
             "Datetime", "Water_level",
@@ -591,6 +606,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure",
             "Source"
         ]
+        
         # Ambil hanya kolom yang benar-benar ada
         display_df = final_df[main_columns].copy()
 
