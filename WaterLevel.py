@@ -536,11 +536,36 @@ if upload_success and st.session_state.get("forecast_running", False):
                 final_df[col] = final_df[base_col].shift(lag_num)
             else:
                 final_df[col] = np.nan
-    
+        
     window_size = 96  # jumlah lag
-    feature_cols = model_features  # semua lag feature yang sudah disiapkan
     target_col = "Water_level"
     
+    # Pisahkan lag fitur Water_level dan non-Water_level
+    non_wl_features = [f for f in model_features if "Water_level" not in f]
+    wl_features = [f for f in model_features if "Water_level" in f]
+    
+    # -----------------------------
+    # 0️⃣ Generate lag features non-Water_level di final_df (sekali)
+    # -----------------------------
+    for col in non_wl_features:
+        if col not in final_df.columns:
+            base_col = col.split("_Lag")[0]
+            lag_num = int(col.split("_Lag")[1])
+            if base_col in final_df.columns:
+                final_df[col] = final_df[base_col].shift(lag_num)
+            else:
+                final_df[col] = np.nan
+    
+    # -----------------------------
+    # 1️⃣ Cache non-Water_level lag values per feature
+    # -----------------------------
+    cached_lags = {}
+    for f in non_wl_features:
+        cached_lags[f] = final_df[f].values
+    
+    # -----------------------------
+    # 2️⃣ Iterative forecast Water_level
+    # -----------------------------
     forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
     forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
     
@@ -548,21 +573,28 @@ if upload_success and st.session_state.get("forecast_running", False):
         dt = final_df.at[idx, "Datetime"]
         progress_container.markdown(f"Predicting hour {i}/{len(forecast_indices)}...")
     
-        # --- 1️⃣ buat input LSTM ---
-        X_seq = create_lstm_input(final_df, feature_cols, target_col, window_size, dt)
+        # --- 2a️⃣ Ambil lag Water_level secara iteratif ---
+        wl_lag_vals = []
+        for lag in range(window_size,0,-1):
+            lag_idx = idx - lag
+            if lag_idx >= 0:
+                wl_lag_vals.append(final_df.at[lag_idx, "Water_level"])
+            else:
+                wl_lag_vals.append(final_df.loc[final_df["Source"]=="Historical", "Water_level"].ffill().iloc[-1])
+        
+        # ---  Gabungkan semua fitur (cached + WL lag) ---
+        X_seq_vals = np.column_stack([cached_lags[f][idx - window_size:idx] for f in non_wl_features] + [wl_lag_vals])
+        X_seq = X_seq_vals.reshape(1, window_size, len(model_features))
     
-        # --- 2️⃣ scaling input ---
-        X_scaled = scaler_X.transform(X_seq.reshape(-1, len(feature_cols))).reshape(1, window_size, len(feature_cols))
+        # --- 3️⃣ scaling input ---
+        X_scaled = scaler_X.transform(X_seq.reshape(-1, len(model_features))).reshape(1, window_size, len(model_features))
     
-        # --- 3️⃣ prediksi LSTM ---
+        # --- 4️⃣ prediksi LSTM ---
         y_scaled = model.predict(X_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
+        y_hat = max(y_hat, 0)  # batasi nilai < 0
     
-        # batasi nilai < 0
-        if y_hat < 0: 
-            y_hat = 0
-    
-        # --- 4️⃣ masukkan hasil ke final_df ---
+        # --- 5️⃣ simpan ke final_df ---
         final_df.at[idx, "Water_level"] = round(y_hat,2)
     
         # update progress bar
@@ -575,6 +607,7 @@ if upload_success and st.session_state.get("forecast_running", False):
     st.session_state["forecast_running"] = False
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
+
         
 # -----------------------------
 # Display Forecast & Plot
