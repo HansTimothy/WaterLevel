@@ -554,28 +554,28 @@ if upload_success and st.session_state.get("forecast_running", False):
                 final_df[col] = np.nan
     
     # -----------------------------
-# 2️⃣ Fill NaN di lag columns
-# -----------------------------
-final_df[model_features] = final_df[model_features].fillna(method="ffill").fillna(method="bfill")
-
-# Tentukan indices forecast
-forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
-forecast_indices = final_df.index[forecast_mask]
-
-total_forecast_steps = len(forecast_indices)
-progress_container.markdown("Forecasting water level 7 days iteratively...")
-
-# Fungsi bantu untuk dynamic lag
-def get_lag_value(df, base_col, current_idx, lag_num):
-    idx_lag = current_idx - lag_num
-    if idx_lag >= 0:
-        val = df.at[idx_lag, base_col]
-        if pd.notna(val):
-            return val
-    # fallback ke nilai terakhir historical
-    if base_col in df.columns:
-        return df.loc[df["Source"]=="Historical", base_col].ffill().iloc[-1]
-    return 0
+    # 2️⃣ Fill NaN di lag columns
+    # -----------------------------
+    final_df[model_features] = final_df[model_features].fillna(method="ffill").fillna(method="bfill")
+    
+    # Tentukan indices forecast
+    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
+    forecast_indices = final_df.index[forecast_mask]
+    
+    total_forecast_steps = len(forecast_indices)
+    progress_container.markdown("Forecasting water level 7 days iteratively...")
+    
+    # Fungsi bantu untuk dynamic lag
+    def get_lag_value(df, base_col, current_idx, lag_num):
+        idx_lag = current_idx - lag_num
+        if idx_lag >= 0:
+            val = df.at[idx_lag, base_col]
+            if pd.notna(val):
+                return val
+        # fallback ke nilai terakhir historical
+        if base_col in df.columns:
+            return df.loc[df["Source"]=="Historical", base_col].ffill().iloc[-1]
+        return 0
 
     # -----------------------------
     # Loop forecast
