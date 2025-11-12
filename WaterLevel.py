@@ -776,6 +776,3 @@ if upload_success and st.session_state.get("forecast_running", False):
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col3:
             st.download_button("Download PDF", pdf_buffer.getvalue(), "water_level_forecast.pdf", "application/pdf", use_container_width=True)
-
-else:
-    result_container.empty()
