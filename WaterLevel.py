@@ -457,8 +457,6 @@ if upload_success and st.session_state.get("forecast_running", False):
     # urutkan dan rapikan
     merged_wide = merged_wide.sort_values("Datetime")
     merged_wide = merged_wide.round(2)
-
-    final_df = merged_wide.copy()
     
     st.session_state["final_df"] = merged_wide
     st.session_state["forecast_done"] = True
@@ -478,8 +476,17 @@ if upload_success and st.session_state.get("forecast_running", False):
         "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure"
     ]
     
+    # Setelah membuat final_df
+    final_df = merged_wide.copy()
+    
+    # Buat kolom Source agar display_df tidak error
+    if "Source" not in final_df.columns:
+        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
+    
+    # Lanjutkan buat lag features
     final_df = create_lag_features(final_df, lag_cols, max_lag=95)
-    final_df.fillna(method='bfill', inplace=True)  # isi NaN awal
+    final_df.fillna(method='bfill', inplace=True)
+
     
     # -----------------------------
     # 4️⃣ Iterative forecast (perbaikan)
