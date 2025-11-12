@@ -79,19 +79,25 @@ st.write(f"Start datetime (GMT+7): {start_datetime}")
 
 # Historical selalu pakai rentang start → forecast end jika perlu
 if start_datetime > rounded_now:
+    # Full future
     hist_start = start_datetime - timedelta(hours=96)
     hist_end = start_datetime
     fore_start = start_datetime
     fore_end = start_datetime + timedelta(hours=168)
+
 elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
+    # Hybrid
     hist_start = start_datetime - timedelta(hours=96)
-    hist_end = rounded_now  # historical sampai rounded_now
+    hist_end = rounded_now  # historical sampai sekarang
     fore_start = start_datetime
     fore_end = start_datetime + timedelta(hours=168)
+
 else:
+    # Full past (start_datetime di masa lalu lebih dari 7 hari)
     hist_start = start_datetime - timedelta(hours=96)
-    hist_end = fore_end = start_datetime  # full past
+    hist_end = start_datetime + timedelta(hours=168)  # historical dipakai sampai forecast end
     fore_start = start_datetime
+    fore_end = start_datetime + timedelta(hours=168)
 
 # -----------------------------
 # Instructions for upload
@@ -449,7 +455,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         region_label = region_labels.get(region_name, region_name)
         progress_container.markdown(f"Fetching data for **{region_label}** ...")
 
-        # --- Historical (pakai rentang) ---
+        # --- Historical ---
         hist_df = fetch_historical_multi_region(region_name, region_points, hist_start, hist_end)
         hist_df["Source"] = "Historical"
         
@@ -457,17 +463,17 @@ if upload_success and st.session_state.get("forecast_running", False):
         fore_df = pd.DataFrame()
         
         if start_datetime > rounded_now:
-            # full future
+            # Full future → ambil forecast API
             fore_df = fetch_forecast_multi_region(region_name, region_points)
             fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
             fore_df["Source"] = "Forecast"
         
         elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
-            # hybrid
+            # Hybrid
             # 1. forecast dari historical API sampai rounded_now
             hist_fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= rounded_now)].copy()
             hist_fore_df["Source"] = "Forecast"
-            
+        
             # 2. forecast dari API > rounded_now
             if fore_end > rounded_now:
                 api_fore_df = fetch_forecast_multi_region(region_name, region_points)
@@ -478,9 +484,10 @@ if upload_success and st.session_state.get("forecast_running", False):
                 fore_df = hist_fore_df
         
         else:
-            # full past → hanya historical
-            fore_df = fetch_historical_multi_region(region_name, region_points, fore_start, fore_end)
+            # Full past → semua forecast dari historical
+            fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= fore_end)].copy()
             fore_df["Source"] = "Forecast"
+
     
         # Gabungkan historical + forecast jadi satu (Datetime + var)
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
