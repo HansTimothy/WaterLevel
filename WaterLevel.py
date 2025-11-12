@@ -535,29 +535,51 @@ if upload_success and st.session_state.get("forecast_running", False):
     # Water_level_ group
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
-    
+
     # Pastikan kolom Source
     final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
     final_df = final_df.sort_values("Datetime").reset_index(drop=True)
     
-    # Tentukan indices forecast
-    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
-    forecast_indices = final_df.index[forecast_mask]
+    # -----------------------------
+    # 1️⃣ Generate lag columns
+    # -----------------------------
+    for col in model_features:
+        if "_Lag" in col:
+            base_col, lag_num = col.rsplit("_Lag", 1)
+            lag_num = int(lag_num)
+            if base_col in final_df.columns:
+                final_df[col] = final_df[base_col].shift(lag_num)
+            else:
+                # Jika base_col belum ada, isi NaN
+                final_df[col] = np.nan
     
-    total_forecast_steps = len(forecast_indices)
-    progress_container.markdown("Forecasting water level 7 days iteratively...")
-    
-    # Fungsi bantu untuk dynamic lag
-    def get_lag_value(df, base_col, current_idx, lag_num):
-        idx_lag = current_idx - lag_num
-        if idx_lag >= 0:
-            val = df.at[idx_lag, base_col]
-            if pd.notna(val):
-                return val
-        # fallback ke nilai terakhir historical
+    # -----------------------------
+# 2️⃣ Fill NaN di lag columns
+# -----------------------------
+final_df[model_features] = final_df[model_features].fillna(method="ffill").fillna(method="bfill")
+
+# Tentukan indices forecast
+forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
+forecast_indices = final_df.index[forecast_mask]
+
+total_forecast_steps = len(forecast_indices)
+progress_container.markdown("Forecasting water level 7 days iteratively...")
+
+# Fungsi bantu untuk dynamic lag
+def get_lag_value(df, base_col, current_idx, lag_num):
+    idx_lag = current_idx - lag_num
+    if idx_lag >= 0:
+        val = df.at[idx_lag, base_col]
+        if pd.notna(val):
+            return val
+    # fallback ke nilai terakhir historical
+    if base_col in df.columns:
         return df.loc[df["Source"]=="Historical", base_col].ffill().iloc[-1]
-    
+    return 0
+
+    # -----------------------------
     # Loop forecast
+    # -----------------------------
     for i, idx in enumerate(forecast_indices, start=1):
         # --- 1. Buat input features dinamis ---
         X_dict = {}
@@ -572,11 +594,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Ubah ke DataFrame
         X_df = pd.DataFrame([X_dict])
     
-        # Ambil 24 jam terakhir
-        X_df_window = X_df.values.reshape(1, 1, len(model_features))  # reshape awal
-    
         # --- 2. Scaling & reshape untuk LSTM ---
-        # Gunakan window terakhir dari final_df untuk LSTM
         window_data = final_df.loc[:idx-1, model_features].tail(24)
         window_data = window_data.fillna(method="ffill").fillna(method="bfill")
         X_scaled = scaler_X.transform(window_data)
