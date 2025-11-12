@@ -578,17 +578,16 @@ if upload_success and st.session_state.get("forecast_running", False):
     progress_bar.progress(1.0)
     
 # -----------------------------
-# Display Forecast & Plot (Optimized – Only Main Columns)
+# Display Forecast & Plot
 # -----------------------------
 result_container = st.empty()
 if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
     final_df = st.session_state["final_df"]
-
     with result_container.container():
-        st.subheader("Water Level Forecast Summary (Main Columns Only)")
+        st.subheader("Water Level + Climate Data with Forecast")
 
-        # 🔹 Pilih kolom utama tanpa lag
-        main_cols = [
+        # 🔹 Pilih hanya kolom utama (tanpa lag)
+        main_columns = [
             "Datetime", "Water_level",
             "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
             "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
@@ -596,28 +595,28 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure",
             "Source"
         ]
-        available_cols = [c for c in main_cols if c in final_df.columns]
-        df_display = final_df[available_cols].copy()
+        display_df = final_df[main_columns].copy()
 
-        # 🔹 Styling ringan (highlight baris forecast)
+        # 🔹 Highlight baris forecast
         def highlight_forecast(row):
-            return ['background-color: #cfe9ff' if row["Source"] == "Forecast" else '' for _ in row]
+            return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
 
-        # Styling aman untuk tabel besar
-        styled_df = df_display.style.apply(highlight_forecast, axis=1).format(precision=2)
+        # 🔹 Format hanya kolom numerik (biar rapi)
+        numeric_cols = display_df.select_dtypes(include=[np.number]).columns.tolist()
+        styled_df = display_df.style.apply(highlight_forecast, axis=1)\
+                                    .format({col: "{:.2f}" for col in numeric_cols})
 
-        # Tampilkan ke HTML agar tidak kena limit Styler Streamlit
-        st.markdown(styled_df.to_html(), unsafe_allow_html=True)
-        st.caption(f"Menampilkan {len(df_display)} baris × {len(available_cols)} kolom utama (tanpa lag & fitur tambahan).")
+        # 🔹 Tampilkan di Streamlit
+        st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
         # Plot
         # -----------------------------
         st.subheader("Water Level Forecast Plot")
         fig = go.Figure()
-
         hist_df = final_df[final_df["Source"] == "Historical"]
         fore_df = final_df[final_df["Source"] == "Forecast"]
+
 
         if not fore_df.empty:
             rmse = 0.03
