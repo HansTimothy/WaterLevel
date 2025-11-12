@@ -479,10 +479,6 @@ if upload_success and st.session_state.get("forecast_running", False):
     # Setelah membuat final_df
     final_df = merged_wide.copy()
     
-    # Buat kolom Source agar display_df tidak error
-    if "Source" not in final_df.columns:
-        final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
-    
     # Lanjutkan buat lag features
     final_df = create_lag_features(final_df, lag_cols, max_lag=95)
     final_df.fillna(method='bfill', inplace=True)
@@ -610,8 +606,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
             "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
             "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
             "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
-            "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure",
-            "Source"
+            "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure"
         ]
         
         # Ambil hanya kolom yang benar-benar ada
