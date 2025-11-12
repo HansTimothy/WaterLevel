@@ -541,39 +541,37 @@ if upload_success and st.session_state.get("forecast_running", False):
             f"({(i)//24 + 1} of 7 days)..."
         )
     
-        # === Ambil window terakhir (berdasarkan data yang sudah terisi) ===
-        last_window = final_df[model_features].iloc[-window_size:].values
-        last_window_scaled = scaler_X.transform(last_window)
-        X_seq = last_window_scaled.reshape(1, window_size, len(model_features))
+        # 🔹 Ambil window terakhir dari data sebelum jam ini (termasuk prediksi sebelumnya)
+        hist_part = final_df.loc[final_df["Datetime"] < next_datetime].tail(window_size)
+        if len(hist_part) < window_size:
+            continue  # belum cukup data
     
-        # === Prediksi LSTM ===
-        y_hat_scaled = model.predict(X_seq, verbose=0)
+        X_seq = hist_part[model_features].values
+        X_seq_scaled = scaler_X.transform(X_seq)
+        X_seq_scaled = X_seq_scaled.reshape(1, window_size, len(model_features))
+    
+        # 🔹 Prediksi
+        y_hat_scaled = model.predict(X_seq_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_hat_scaled)[0, 0]
         y_hat = max(0, y_hat)
     
-        # === Isi nilai Water_level di baris forecast yang sesuai ===
+        # 🔹 Simpan hasil prediksi
         final_df.at[idx, "Water_level"] = round(y_hat, 2)
     
-        # === Update lag agar prediksi berikutnya pakai nilai terbaru ===
-        for lag in range(95, 1, -1):
+        # 🔹 Update lag kolom untuk jam berikutnya
+        for lag in range(95, 0, -1):
             lag_col = f"Water_level_Lag{lag}"
-            prev_col = f"Water_level_Lag{lag-1}"
-            if lag_col in final_df.columns and prev_col in final_df.columns:
-                final_df.at[idx, lag_col] = final_df.iloc[idx - 1][prev_col]
+            if lag == 1:
+                final_df.loc[final_df["Datetime"] >= next_datetime, lag_col] = y_hat
+            else:
+                prev_col = f"Water_level_Lag{lag-1}"
+                if prev_col in final_df.columns:
+                    final_df.loc[final_df["Datetime"] >= next_datetime, lag_col] = \
+                        final_df.loc[final_df["Datetime"] < next_datetime, prev_col].iloc[-1]
     
-        if "Water_level_Lag1" in final_df.columns:
-            final_df.at[idx, "Water_level_Lag1"] = round(y_hat, 2)
-    
-        # === Update progress ===
+        # 🔹 Update progress bar
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
-    
-    # Simpan hasil ke session
-    st.session_state["final_df"] = final_df
-    st.session_state["forecast_done"] = True
-    st.session_state["forecast_running"] = False
-    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
-    progress_bar.progress(1.0)
     
 # -----------------------------
 # Display Forecast & Plot
