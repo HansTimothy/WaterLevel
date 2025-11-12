@@ -610,8 +610,9 @@ if upload_success and st.session_state.get("forecast_running", False):
         final_df.at[idx, "Source"] = "Forecast"
     
         # --- 5. Update progress ---
+        step_counter += 1  # setiap jam forecast dihitung sebagai 1 step
         progress_container.markdown(f"Forecasting Water Level **(Hour {i}/{total_forecast_steps})**")
-        progress_bar.progress(min(max(i / total_forecast_steps, 0.0), 1.0))
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
     
     # Selesai
     st.session_state["final_df"] = final_df
