@@ -576,8 +576,8 @@ if upload_success and st.session_state.get("forecast_running", False):
         hour_in_day = ((i-1) % 24) + 1
         
         progress_container.markdown(
-            f"Predicting **hour {i}/{total_forecast_hours}** "
-            f"→ Day {day_num}/7, Hour {hour_in_day}/24"
+            f"Forecasting **hour {i} of {total_forecast_hours}** "
+            f"(Day {day_num})"
         )
         
         # Buat input dinamis untuk LSTM
