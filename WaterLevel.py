@@ -525,6 +525,18 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Semua data sebelum start_datetime = Historical, setelah = Forecast
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
 
+    # -----------------------------
+    # 0️⃣ Generate lag features di final_df
+    # -----------------------------
+    for col in model_features:
+        if col not in final_df.columns:
+            base_col = col.split("_Lag")[0]  # misal "T_Relative_humidity"
+            lag_num = int(col.split("_Lag")[1])
+            if base_col in final_df.columns:
+                final_df[col] = final_df[base_col].shift(lag_num)
+            else:
+                final_df[col] = np.nan
+    
     window_size = 96  # jumlah lag
     feature_cols = model_features  # semua lag feature yang sudah disiapkan
     target_col = "Water_level"
