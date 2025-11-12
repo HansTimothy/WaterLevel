@@ -616,8 +616,9 @@ if upload_success and st.session_state.get("forecast_running", False):
         final_df.at[idx, "Water_level"] = round(y_hat, 2)
     
         # --- 4. Update progress ---
+        step_counter += 1
         progress_container.markdown(f"Forecasting Water Level **(Hour {i}/{len(forecast_indices)})**")
-        progress_bar.progress(min(max(i / len(forecast_indices), 0.0), 1.0))
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
     
     # set session state selesai
     st.session_state["final_df"] = final_df
@@ -668,30 +669,21 @@ if upload_success and st.session_state.get("forecast_running", False):
         # -----------------------------
         st.subheader("Water Level Forecast Plot")
         fig = go.Figure()
+        
         hist_df = final_df[final_df["Source"] == "Historical"]
         fore_df = final_df[final_df["Source"] == "Forecast"]
         
-        # Garis historis dulu
-        fig.add_trace(go.Scatter(
-            x=hist_df["Datetime"], y=hist_df["Water_level"],
-            mode="lines+markers",
-            name="Historical",
-            line=dict(color="blue"),
-            marker=dict(size=4)
-        ))
-        
-        # Forecast dan ±RMSE
+        # 2️⃣ Forecast (garis kuning) dan ±RMSE (area)
         if not fore_df.empty:
             forecast_x = fore_df["Datetime"]
             forecast_y = fore_df["Water_level"]
         
-            # RMSE, bisa diganti dinamis
-            rmse = 0.219  
+            rmse = 0.219  # atau bisa dinamis
         
-            upper_y = forecast_y + rmse
+            upper_y = (forecast_y + rmse)
             lower_y = (forecast_y - rmse).clip(lower=0)
         
-            # Area ±RMSE
+            # Area ±RMSE mengikuti forecast
             fig.add_trace(go.Scatter(
                 x=pd.concat([forecast_x, forecast_x[::-1]]),
                 y=pd.concat([upper_y, lower_y[::-1]]),
@@ -700,19 +692,30 @@ if upload_success and st.session_state.get("forecast_running", False):
                 line=dict(color="rgba(255,165,0,0)"),
                 hoverinfo="skip",
                 showlegend=True,
-                name=f"±RMSE {rmse:.3f}m"
+                name=f"±RMSE {rmse:.3f} m"
             ))
         
             # Garis forecast
             fig.add_trace(go.Scatter(
-                x=forecast_x, y=forecast_y,
+                x=forecast_x,
+                y=forecast_y,
                 mode="lines+markers",
                 name="Forecast",
                 line=dict(color="orange"),
                 marker=dict(size=4)
             ))
+
+        # 1️⃣ Garis historis
+        fig.add_trace(go.Scatter(
+            x=hist_df["Datetime"],
+            y=hist_df["Water_level"],
+            mode="lines+markers",
+            name="Historical",
+            line=dict(color="blue"),
+            marker=dict(size=4)
+        ))
         
-        # Garis horizontal limit
+        # 3️⃣ Garis horizontal limit
         fig.add_trace(go.Scatter(
             x=[final_df["Datetime"].min(), final_df["Datetime"].max()],
             y=[19.5, 19.5],
@@ -729,7 +732,7 @@ if upload_success and st.session_state.get("forecast_running", False):
             name="Upper Limit 28 m"
         ))
         
-        # Layout dan annotation RMSE
+        # Layout & annotation RMSE
         fig.update_layout(
             title="Water Level Historical vs Forecast",
             xaxis_title="Datetime",
