@@ -664,6 +664,7 @@ if upload_success and st.session_state.get("forecast_running", False):
 
             st.dataframe(styled_df, use_container_width=True, height=500)
 
+        # -----------------------------
         # Plot Water Level Forecast
         # -----------------------------
         st.subheader("Water Level Forecast Plot")
@@ -673,9 +674,15 @@ if upload_success and st.session_state.get("forecast_running", False):
         fore_df = final_df[final_df["Source"]=="Forecast"]
         
         if not fore_df.empty:
-            forecast_x = fore_df["Datetime"]
-            forecast_y = fore_df["Water_level"]
             rmse = 0.219
+        
+            # Titik terakhir historis
+            last_hist_dt = hist_df["Datetime"].iloc[-1]
+            last_hist_val = hist_df["Water_level"].iloc[-1]
+        
+            # Forecast X & Y (tersambung dari historis)
+            forecast_x = pd.concat([pd.Series([last_hist_dt]), fore_df["Datetime"]])
+            forecast_y = pd.concat([pd.Series([last_hist_val]), fore_df["Water_level"]])
         
             upper_y = forecast_y + rmse
             lower_y = (forecast_y - rmse).clip(lower=0)
@@ -695,14 +702,13 @@ if upload_success and st.session_state.get("forecast_running", False):
                 x=forecast_x,
                 y=lower_y,
                 mode='lines',
-                fill='tonexty',  # area diisi antara lower dan upper
+                fill='tonexty',
                 fillcolor="rgba(255,165,0,0.2)",
                 line=dict(width=0),
                 name=f"±RMSE {rmse:.3f} m"
             ))
-
         
-            # 4️⃣ Garis forecast (kuning) di atas area
+            # 4️⃣ Garis forecast (orange) termasuk titik historis terakhir
             fig.add_trace(go.Scatter(
                 x=forecast_x,
                 y=forecast_y,
@@ -711,7 +717,7 @@ if upload_success and st.session_state.get("forecast_running", False):
                 line=dict(color="orange"),
                 marker=dict(size=4)
             ))
-
+        
         # 1️⃣ Garis historis
         fig.add_trace(go.Scatter(
             x=hist_df["Datetime"],
