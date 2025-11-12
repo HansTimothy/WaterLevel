@@ -132,7 +132,7 @@ if uploaded_file is not None:
             wl_hourly['Water_level'] = wl_hourly['Water_level'].interpolate(method='linear', limit_direction='both')
             wl_hourly['Water_level'] = wl_hourly['Water_level'].rolling(window=3, center=True, min_periods=1).median()
             wl_hourly['Water_level'] = wl_hourly['Water_level'].rolling(window=3, center=True, min_periods=1).mean()
-            wl_hourly['Water_level'] = wl_hourly['Water_level'].round(3)
+            wl_hourly['Water_level'] = wl_hourly['Water_level'].round(2)
             
             # -----------------------
             # 6️⃣ Hanya 96 jam terakhir sebelum start_datetime
