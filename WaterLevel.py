@@ -534,12 +534,17 @@ if upload_success and st.session_state.get("forecast_running", False):
     # -----------------------------
     for col in model_features:
         if col not in final_df.columns:
-            base_col = col.split("_Lag")[0]  # misal "T_Relative_humidity"
-            lag_num = int(col.split("_Lag")[1])
-            if base_col in final_df.columns:
-                final_df[col] = final_df[base_col].shift(lag_num)
+            if "_Lag" in col:
+                # contoh: "T_Relative_humidity_Lag61"
+                base_col, lag_num = col.rsplit("_Lag", 1)
+                lag_num = int(lag_num)
+                if base_col in final_df.columns:
+                    final_df[col] = final_df[base_col].shift(lag_num)
+                else:
+                    final_df[col] = np.nan
             else:
-                final_df[col] = np.nan
+                # jika kolom asli belum ada
+                final_df[col] = final_df.get(col, np.nan)
     
     # -----------------------------
     # 1️⃣ Loop iterative forecast
