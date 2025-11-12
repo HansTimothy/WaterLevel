@@ -546,8 +546,8 @@ if upload_success and st.session_state.get("forecast_running", False):
             else:
                 lag_cols_dict[col] = final_df.get(col, np.nan)
 
-# Tambahkan semua kolom sekaligus
-final_df = pd.concat([final_df, pd.DataFrame(lag_cols_dict, index=final_df.index)], axis=1)
+    # Tambahkan semua kolom sekaligus
+    final_df = pd.concat([final_df, pd.DataFrame(lag_cols_dict, index=final_df.index)], axis=1)
     
     # -----------------------------
     # 1️⃣ Loop iterative forecast
