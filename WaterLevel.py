@@ -606,27 +606,40 @@ if upload_success and st.session_state.get("forecast_running", False):
     progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
     progress_bar.progress(1.0)
 
-# -----------------------------
-# Display Forecast & Plot
-# -----------------------------
-result_container = st.empty()
-if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
-    final_df = st.session_state["final_df"]
-    with result_container.container():
-        st.subheader("Water Level + Climate Data with Forecast")
-        def highlight_forecast(row):
-            return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
-        
-        # Ambil semua kolom numerik
-        numeric_cols = final_df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        # Terapkan format hanya untuk kolom numerik
-        styled_df = final_df[display_cols].style.apply(
-            lambda row: ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row],
-            axis=1
-        ).format({"Water_level": "{:.2f}"})
-        
-        st.dataframe(styled_df, use_container_width=True, height=500)
+    # -----------------------------
+    # Display Forecast & Plot
+    # -----------------------------
+    result_container = st.empty()
+    if st.session_state["forecast_done"] and st.session_state["final_df"] is not None:
+        final_df = st.session_state["final_df"]
+        with result_container.container():
+            st.subheader("Water Level + Climate Data with Forecast")
+    
+            
+            # 1. Buat DataFrame khusus untuk styling/display. 
+            #    Sertakan 'Datetime' dan 'Source' untuk styling dan referensi.
+            display_plus_source_cols = ["Datetime", "Source"] + display_cols
+            df_for_styling = final_df[display_plus_source_cols].copy()
+            
+            # 2. Definisikan fungsi styling
+            def highlight_forecast(row):
+                # Fungsi ini sekarang aman karena 'Source' ada di df_for_styling
+                return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
+            
+            # 3. Terapkan styling
+            styled_df = df_for_styling.style.apply(
+                highlight_forecast,
+                axis=1
+            ).format({"Water_level": "{:.2f}"})
+    
+            # 4. Sembunyikan kolom 'Source' dan kolom selain display_cols yang tidak ingin ditampilkan
+            #    Note: Kolom 'Source' harus disembunyikan agar tidak muncul di tabel.
+            styled_df = styled_df.hide(
+                 subset=["Source"], # Kolom ini digunakan hanya untuk styling, harus disembunyikan
+                 axis="columns"
+            )
+            
+            st.dataframe(styled_df, use_container_width=True, height=500)
 
         # -----------------------------
         # Plot
