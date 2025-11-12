@@ -10,15 +10,30 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 import plotly.graph_objects as go
-import keras
+from keras.models import Sequential
+from keras.layers import LSTM, Dropout, Dense
 
-# -----------------------------
-# Load trained model
-# -----------------------------
+
 # Load LSTM model & scalers
-lstm_model = keras.models.load_model("lstm_waterlevel_model.h5")
 scaler_X = joblib.load("scaler_X.pkl")
 scaler_y = joblib.load("scaler_y.pkl")
+
+n_features = scaler_X.n_features_in_  # jumlah fitur input
+timesteps = 24  # sesuaikan dengan data/memori LSTM lama
+
+# Rebuild model
+model = Sequential()
+model.add(LSTM(128, input_shape=(timesteps, n_features), return_sequences=True))
+model.add(Dropout(0.3))
+model.add(LSTM(64))
+model.add(Dense(1))
+
+# Compile model
+optimizer = Adam(learning_rate=0.0005)
+model.compile(optimizer=optimizer, loss='mse')
+
+# Load bobot lama
+model.load_weights("lstm_waterlevel_model.h5")
 
 st.title("🌊 Water Level Forecast Dashboard")
 
@@ -504,47 +519,49 @@ if upload_success and st.session_state.get("forecast_running", False):
     for i in range(1, 96):
         model_features.append(f"Water_level_Lag{i}")
 
-
     # Pastikan kolom Source ada
     if "Source" not in final_df.columns:
         # Semua data sebelum start_datetime = Historical, setelah = Forecast
         final_df["Source"] = np.where(final_df["Datetime"] < start_datetime, "Historical", "Forecast")
 
-    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
-    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
-
-    window_size = 96
-    feature_cols = model_features
+    window_size = 96  # jumlah lag
+    feature_cols = model_features  # semua lag feature yang sudah disiapkan
     target_col = "Water_level"
     
+    forecast_mask = (final_df["Datetime"] >= start_datetime) & (final_df["Datetime"] < start_datetime + timedelta(hours=168))
+    forecast_indices = final_df.index[forecast_mask & (final_df["Source"]=="Forecast")]
+    
     for i, idx in enumerate(forecast_indices, start=1):
-        progress_container.markdown(f"Predicting hour {i}/{total_forecast_hours}...")
-    
         dt = final_df.at[idx, "Datetime"]
+        progress_container.markdown(f"Predicting hour {i}/{len(forecast_indices)}...")
     
-        # 1️⃣ buat input LSTM
+        # --- 1️⃣ buat input LSTM ---
         X_seq = create_lstm_input(final_df, feature_cols, target_col, window_size, dt)
     
-        # 2️⃣ scaling
+        # --- 2️⃣ scaling input ---
         X_scaled = scaler_X.transform(X_seq.reshape(-1, len(feature_cols))).reshape(1, window_size, len(feature_cols))
     
-        # 3️⃣ prediksi
-        y_scaled = lstm_model.predict(X_scaled, verbose=0)
+        # --- 3️⃣ prediksi LSTM ---
+        y_scaled = model.predict(X_scaled, verbose=0)
         y_hat = scaler_y.inverse_transform(y_scaled.reshape(-1,1))[0,0]
-        if y_hat < 0: y_hat = 0
     
-        # 4️⃣ masukkan ke final_df
+        # batasi nilai < 0
+        if y_hat < 0: 
+            y_hat = 0
+    
+        # --- 4️⃣ masukkan hasil ke final_df ---
         final_df.at[idx, "Water_level"] = round(y_hat,2)
     
+        # update progress bar
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
     
-    
-        st.session_state["final_df"] = final_df
-        st.session_state["forecast_done"] = True
-        st.session_state["forecast_running"] = False
-        progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
-        progress_bar.progress(1.0)
+    # set session state selesai
+    st.session_state["final_df"] = final_df
+    st.session_state["forecast_done"] = True
+    st.session_state["forecast_running"] = False
+    progress_container.markdown("✅ 7-Day Water Level Forecast Completed!")
+    progress_bar.progress(1.0)
         
 # -----------------------------
 # Display Forecast & Plot
