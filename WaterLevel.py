@@ -681,7 +681,7 @@ if st.session_state["forecast_done"] and st.session_state["final_df"] is not Non
         # -----------------------------
         # Downloads (Forecast only)
         # -----------------------------
-        forecast_only = df_display[df_display["Source"] == "Forecast"][["Datetime", "Water_level"]].copy()
+        forecast_only = final_df[final_df["Source"] == "Forecast"][["Datetime", "Water_level"]].copy()
         forecast_only["Water_level"] = forecast_only["Water_level"].round(2)
         forecast_only["Datetime"] = forecast_only["Datetime"].astype(str)
 
