@@ -455,8 +455,8 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Historical
         hist_df = fetch_historical_multi_region(region_name, region_points, hist_start, hist_end)
         hist_df["Source"] = "Historical"
-                step_counter += 1
-                progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
+        step_counter += 1
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
 
 
         # Fetch forecast
