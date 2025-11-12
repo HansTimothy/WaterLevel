@@ -616,6 +616,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         final_df.at[idx, "Water_level"] = round(y_hat, 2)
     
         # --- 4. Update progress ---
+        progress_container.markdown(f"Forecasting Water Level: **Hour {i}/{len(forecast_indices)}**")
         progress_bar.progress(min(max(i / len(forecast_indices), 0.0), 1.0))
     
     # set session state selesai
@@ -638,6 +639,10 @@ if upload_success and st.session_state.get("forecast_running", False):
             
             # 1. Buat DataFrame khusus untuk styling/display. 
             df_for_styling = final_df[display_cols].copy()
+
+            # Round semua kolom numerik ke 2 desimal
+            numeric_cols = df_for_styling.select_dtypes(include=np.number).columns
+            df_for_styling[numeric_cols] = df_for_styling[numeric_cols].round(2)
             
             # 2. Definisikan fungsi styling
             def highlight_forecast(row):
