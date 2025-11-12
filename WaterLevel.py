@@ -15,16 +15,22 @@ from keras.layers import LSTM, Dropout, Dense
 from keras.optimizers import Adam
 
 display_cols = [
-    # T_ region
-    "T_Relative_humidity", "T_Rainfall", "T_Cloud_cover", "T_Surface_pressure",
-    # SL_ region
-    "SL_Relative_humidity", "SL_Cloud_cover", "SL_Surface_pressure",
-    # MB_ region
-    "MB_Relative_humidity", "MB_Cloud_cover", "MB_Surface_pressure",
-    # MU_ region
-    "MU_Relative_humidity", "MU_Cloud_cover", "MU_Surface_pressure",
-    # Water level
-    "Water_level"
+    "Datetime",
+    "Water_level",
+    "T_Relative_humidity",
+    "T_Rainfall",
+    "T_Cloud_cover",
+    "T_Surface_pressure",
+    "SL_Relative_humidity",
+    "SL_Cloud_cover",
+    "SL_Surface_pressure",
+    "MB_Relative_humidity",
+    "MB_Cloud_cover",
+    "MB_Surface_pressure",
+    "MU_Relative_humidity",
+    "MU_Cloud_cover",
+    "MU_Surface_pressure",
+    "Source"
 ]
 
 # Load LSTM model & scalers
@@ -631,9 +637,7 @@ if upload_success and st.session_state.get("forecast_running", False):
     
             
             # 1. Buat DataFrame khusus untuk styling/display. 
-            #    Sertakan 'Datetime' dan 'Source' untuk styling dan referensi.
-            display_plus_source_cols = ["Datetime", "Source"] + display_cols
-            df_for_styling = final_df[display_plus_source_cols].copy()
+            df_for_styling = final_df[display_cols].copy()
             
             # 2. Definisikan fungsi styling
             def highlight_forecast(row):
