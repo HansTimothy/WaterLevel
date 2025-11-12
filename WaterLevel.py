@@ -640,27 +640,21 @@ if upload_success and st.session_state.get("forecast_running", False):
             # 1. Buat DataFrame khusus untuk styling/display. 
             df_for_styling = final_df[display_cols].copy()
 
-            # Round semua kolom numerik ke 2 desimal
+            # 2. Round semua kolom numerik ke 2 desimal dan convert ke string
             numeric_cols = df_for_styling.select_dtypes(include=np.number).columns
-            df_for_styling[numeric_cols] = df_for_styling[numeric_cols].round(2)
+            for col in numeric_cols:
+                df_for_styling[col] = df_for_styling[col].map(lambda x: f"{x:.2f}")
             
-            # 2. Definisikan fungsi styling
+            # 3. Definisikan fungsi styling
             def highlight_forecast(row):
                 # Fungsi ini sekarang aman karena 'Source' ada di df_for_styling
                 return ['background-color: #cfe9ff' if row['Source']=="Forecast" else '' for _ in row]
             
-            # 3. Terapkan styling
+            # 4. Terapkan styling
             styled_df = df_for_styling.style.apply(
                 highlight_forecast,
                 axis=1
             ).format({"Water_level": "{:.2f}"})
-    
-            # 4. Sembunyikan kolom 'Source' dan kolom selain display_cols yang tidak ingin ditampilkan
-            #    Note: Kolom 'Source' harus disembunyikan agar tidak muncul di tabel.
-            styled_df = styled_df.hide(
-                 subset=["Source"], # Kolom ini digunakan hanya untuk styling, harus disembunyikan
-                 axis="columns"
-            )
             
             st.dataframe(styled_df, use_container_width=True, height=500)
 
