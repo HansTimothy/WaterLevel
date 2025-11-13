@@ -2,6 +2,7 @@ streamlit
 pandas
 numpy
 scikit-learn
+xgboost
 tensorflow
 joblib
 plotly
@@ -11,3 +12,4 @@ openpyxl
 reportlab
 scipy
 keras
+
