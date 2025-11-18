@@ -42,24 +42,24 @@ st.write(f"Start datetime (GMT+7): {start_datetime}")
 # Historical selalu pakai rentang start → forecast end jika perlu
 if start_datetime > rounded_now:
     # Full future
-    hist_start = start_datetime - timedelta(hours=336)
+    hist_start = start_datetime - timedelta(days=14)
     hist_end = start_datetime
     fore_start = start_datetime
-    fore_end = start_datetime + timedelta(hours=168)
+    fore_end = start_datetime + timedelta(days=7)
 
 elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
     # Hybrid
-    hist_start = start_datetime - timedelta(hours=336)
+    hist_start = start_datetime - timedelta(days=14)
     hist_end = rounded_now  # historical sampai sekarang
     fore_start = start_datetime
-    fore_end = start_datetime + timedelta(hours=168)
+    fore_end = start_datetime + timedelta(days=7)
 
 else:
     # Full past (start_datetime di masa lalu lebih dari 7 hari)
-    hist_start = start_datetime - timedelta(hours=336)
-    hist_end = start_datetime + timedelta(hours=168)  # historical dipakai sampai forecast end
+    hist_start = start_datetime - timedelta(days=14)
+    hist_end = start_datetime + timedelta(days=7)  # historical dipakai sampai forecast end
     fore_start = start_datetime
-    fore_end = start_datetime + timedelta(hours=168)
+    fore_end = start_datetime + timedelta(days=7)
 
 # -----------------------------
 # Instructions for upload
@@ -408,41 +408,41 @@ if run_forecast:
 
 if upload_success and st.session_state.get("forecast_running", False):
     progress_container = st.empty()
-    total_forecast_hours = 168
-    total_steps = len(multi_points) * 2 + 3 + total_forecast_hours
-    step_counter = 0
+
+    # ==== PROGRESS HANYA UNTUK FETCHING ====
+    total_fetch_steps = len(multi_points)   # TUNGGAL: 1 region = 1 step
+    fetch_counter = 0
     progress_bar = st.progress(0.0)
 
-    # kita akan gabungkan hasil semua region secara wide
+    # tabel wide awal (WL daily)
     merged_wide = wl_daily.copy()
     if "time" in merged_wide.columns:
         merged_wide.rename(columns={"time": "Datetime"}, inplace=True)
     merged_wide["Datetime"] = pd.to_datetime(merged_wide["Datetime"])
 
+    # ====================================================
+    # 1️⃣ FETCHING MULTI-REGION (dengan progress bar)
+    # ====================================================
     for region_name, region_points in multi_points.items():
         region_label = region_labels.get(region_name, region_name)
         progress_container.markdown(f"Fetching data for **{region_label}** ...")
 
-        # --- Historical ---
+        # ---------- HISTORICAL ----------
         hist_df = fetch_historical_multi_region(region_name, region_points, hist_start, hist_end)
         hist_df["Source"] = "Historical"
         
-        # --- Forecast ---
-        fore_df = pd.DataFrame()
-        
+        # ---------- FORECAST ----------
         if start_datetime > rounded_now:
-            # Full future → ambil forecast API
+            # Full future
             fore_df = fetch_forecast_multi_region(region_name, region_points)
             fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
             fore_df["Source"] = "Forecast"
-        
-        elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(hours=168):
+
+        elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(days=7):
             # Hybrid
-            # 1. forecast dari historical API sampai rounded_now
             hist_fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= rounded_now)].copy()
             hist_fore_df["Source"] = "Forecast"
-        
-            # 2. forecast dari API > rounded_now
+
             if fore_end > rounded_now:
                 api_fore_df = fetch_forecast_multi_region(region_name, region_points)
                 api_fore_df = api_fore_df[(api_fore_df["Datetime"] > rounded_now) & (api_fore_df["Datetime"] <= fore_end)]
@@ -450,31 +450,24 @@ if upload_success and st.session_state.get("forecast_running", False):
                 fore_df = pd.concat([hist_fore_df, api_fore_df], ignore_index=True)
             else:
                 fore_df = hist_fore_df
-        
+
         else:
-            # Full past → semua forecast dari historical
+            # Full past
             fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= fore_end)].copy()
             fore_df["Source"] = "Forecast"
 
-    
-        # Gabungkan historical + forecast jadi satu (Datetime + var)
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
-        if combined_df.empty:
-            st.warning(f"{region_label}: no data returned.")
-            continue
         combined_df["Datetime"] = pd.to_datetime(combined_df["Datetime"])
         combined_df.sort_values("Datetime", inplace=True)
-
-        # Hapus duplikat waktu (kalau ada overlap hist/forecast)
         combined_df = combined_df.drop_duplicates(subset=["Datetime"], keep="last")
 
-        # --- Batasi waktu ---
+        # batasi window
         combined_df = combined_df[
             (combined_df["Datetime"] >= start_datetime - timedelta(days=14)) &
             (combined_df["Datetime"] < start_datetime + timedelta(days=7))
         ]
 
-        # Ganti nama kolom jadi prefiks region (T_, SL_, dst)
+        # rename
         rename_map = {
             "Relative_humidity": f"{region_name}Relative_humidity",
             "Cloud_cover": f"{region_name}Cloud_cover",
@@ -482,33 +475,39 @@ if upload_success and st.session_state.get("forecast_running", False):
         }
         if region_name not in ["SL_", "MB_", "MU_"]:
             rename_map["Rainfall"] = f"{region_name}Rainfall"
+
         combined_df.rename(columns=rename_map, inplace=True)
 
-        # Merge ke tabel utama
+        # merge ke wide table
         merged_wide = pd.merge(
             merged_wide, 
             combined_df[["Datetime"] + list(rename_map.values())],
             on="Datetime", how="outer"
         )
-        step_counter += 1
-        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
 
-    # urutkan dan rapikan
-    merged_wide = merged_wide.sort_values("Datetime")
-    merged_wide = merged_wide.round(2)
+        # UPDATE PROGRESS BAR
+        fetch_counter += 1
+        progress_bar.progress(fetch_counter / total_fetch_steps)
 
+    # selesai fetching
+    merged_wide = merged_wide.sort_values("Datetime").round(2)
     final_df = merged_wide.copy()
-    
+
+    # simpan
     st.session_state["final_df"] = merged_wide
-    st.session_state["forecast_done"] = True
-    st.session_state["forecast_running"] = False
+    st.session_state["forecast_done"] = False  # belum forecast, baru fetch selesai
+
+    # SET PROGRESS KE 100%
+    progress_bar.progress(1.0)
+    progress_container.success("All region data fetched successfully!")
 
     # ==========================================================
-    # 4️⃣ DAILY MULTISTEP FORECASTING USING LSTM + LOADED WEIGHTS
+    # 2️⃣ LSTM FORECAST (TANPA PROGRESS LOOP)
     # ==========================================================
-    
-    progress_container.markdown("Forecasting water level (7 days) using LSTM weight-loaded model...")
-    
+
+    progress_container = st.empty()
+    progress_container.markdown("Running 7-day LSTM forecast...")
+
     # -----------------------------
     # 1. CONFIG (harus sama dgn training)
     # -----------------------------
