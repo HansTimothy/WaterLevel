@@ -77,7 +77,7 @@ st.info(
 # Upload water level data
 # -----------------------------
 uploaded_file = st.file_uploader("Upload CSV File (AWLR Jetty Tuhup Logs)", type=["csv"])
-wl_hourly = None
+wl_daily = None
 upload_success = False
 
 if uploaded_file is not None:
@@ -387,7 +387,8 @@ if upload_success and st.session_state.get("forecast_running", False):
     progress_bar = st.progress(0.0)
 
     # kita akan gabungkan hasil semua region secara wide
-    merged_wide = wl_hourly.copy()
+    merged_wide = wl_daily.copy()
+    
     if "time" in merged_wide.columns:
         merged_wide.rename(columns={"time": "Datetime"}, inplace=True)
     merged_wide["Datetime"] = pd.to_datetime(merged_wide["Datetime"])
