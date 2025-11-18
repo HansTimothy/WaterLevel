@@ -278,8 +278,22 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         if c in df_weighted.columns:
             df_weighted[c] = df_weighted[c].round(2)
 
-    df_weighted["Region"] = region_labels.get(region_name, region_name)
-    return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
+    df_weighted = df_weighted.sort_values("Datetime")
+    df_weighted.set_index("Datetime", inplace=True)
+    
+    df_daily = pd.DataFrame()
+    
+    df_daily["Relative_humidity"] = df_weighted["Relative_humidity"].resample("1D").mean()
+    df_daily["Cloud_cover"] = df_weighted["Cloud_cover"].resample("1D").mean()
+    df_daily["Surface_pressure"] = df_weighted["Surface_pressure"].resample("1D").mean()
+    
+    # Curah hujan wajib SUM
+    df_daily["Rainfall"] = df_weighted["Rainfall"].resample("1D").sum()
+    
+    df_daily = df_daily.reset_index()
+    df_daily["Region"] = region_labels.get(region_name, region_name)
+    
+    return df_daily[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
 
 # -----------------------------
@@ -360,9 +374,22 @@ def fetch_forecast_multi_region(region_name, region_points):
         if c in df_weighted.columns:
             df_weighted[c] = df_weighted[c].round(2)
 
-    df_weighted["Region"] = region_labels.get(region_name, region_name)
-    return df_weighted[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
-
+    df_weighted = df_weighted.sort_values("Datetime")
+    df_weighted.set_index("Datetime", inplace=True)
+    
+    df_daily = pd.DataFrame()
+    
+    df_daily["Relative_humidity"] = df_weighted["Relative_humidity"].resample("1D").mean()
+    df_daily["Cloud_cover"] = df_weighted["Cloud_cover"].resample("1D").mean()
+    df_daily["Surface_pressure"] = df_weighted["Surface_pressure"].resample("1D").mean()
+    
+    # Rainfall SUM
+    df_daily["Rainfall"] = df_weighted["Rainfall"].resample("1D").sum()
+    
+    df_daily = df_daily.reset_index()
+    df_daily["Region"] = region_labels.get(region_name, region_name)
+    
+    return df_daily[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
 # -----------------------------
 # Wrapper: proses setiap region berurutan dan merge jadi satu wide table
@@ -388,7 +415,6 @@ if upload_success and st.session_state.get("forecast_running", False):
 
     # kita akan gabungkan hasil semua region secara wide
     merged_wide = wl_daily.copy()
-    
     if "time" in merged_wide.columns:
         merged_wide.rename(columns={"time": "Datetime"}, inplace=True)
     merged_wide["Datetime"] = pd.to_datetime(merged_wide["Datetime"])
@@ -444,8 +470,8 @@ if upload_success and st.session_state.get("forecast_running", False):
 
         # --- Batasi waktu ---
         combined_df = combined_df[
-            (combined_df["Datetime"] >= start_datetime - timedelta(hours=96)) &
-            (combined_df["Datetime"] < start_datetime + timedelta(hours=168))
+            (combined_df["Datetime"] >= start_datetime - timedelta(days=14)) &
+            (combined_df["Datetime"] < start_datetime + timedelta(days=7))
         ]
 
         # Ganti nama kolom jadi prefiks region (T_, SL_, dst)
@@ -472,28 +498,8 @@ if upload_success and st.session_state.get("forecast_running", False):
     merged_wide = merged_wide.round(2)
 
     final_df = merged_wide.copy()
-
-    # -----------------------------
-    # Convert final result to DAILY AVERAGE
-    # -----------------------------
-    daily_df = merged_wide.copy()
-    daily_df["Datetime"] = pd.to_datetime(daily_df["Datetime"])
     
-    # resample per hari (rata-rata)
-    daily_df = (
-        daily_df.set_index("Datetime")
-                .resample("1D")
-                .mean()
-                .reset_index()
-    )
-    
-    # pembulatan
-    daily_df = daily_df.round(2)
-    
-    # update final
-    final_df = daily_df.copy()
-
-    st.session_state["final_df"] = final_df
+    st.session_state["final_df"] = merged_wide
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
 
