@@ -208,7 +208,7 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={latitudes}&longitude={longitudes}"
         f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-        "&hourly=relative_humidity_2m,precipitation,cloud_cover,surface_pressure"
+        "&daily=relative_humidity_2m_mean,cloud_cover_mean,surface_pressure_mean,precipitation_sum"
         "&timezone=Asia%2FBangkok"
     )
 
@@ -219,18 +219,17 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching historical: {e}")
         return pd.DataFrame()
 
-    # --- Normalisasi format respons
-    if isinstance(data, dict) and "hourly" in data:
-        data = [data] * len(region_points)  # duplikasikan 1 response untuk semua titik
+    # --- Normalisasi respons ---
+    if isinstance(data, dict) and "daily" in data:
+        data = [data] * len(region_points)
     elif isinstance(data, dict):
         data = list(data.values()) if "latitude" not in data else [data]
     elif not isinstance(data, list):
-        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected historical response format.")
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected historical format.")
         return pd.DataFrame()
 
-    # --- Jika jumlah item tidak sama, sesuaikan panjangnya
+    # Sesuaikan panjang array
     if len(data) < len(region_points):
-        st.info(f"[{region_labels.get(region_name, region_name)}] Adjusting historical response length ({len(data)} vs {len(region_points)}).")
         while len(data) < len(region_points):
             data.append(data[-1])
     elif len(data) > len(region_points):
@@ -240,10 +239,10 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
 
     for i, (dir_name, info) in enumerate(region_points.items()):
         loc_data = data[i]
-        if not isinstance(loc_data, dict) or "hourly" not in loc_data:
+        if "daily" not in loc_data:
             continue
 
-        df = pd.DataFrame(loc_data["hourly"])
+        df = pd.DataFrame(loc_data["daily"])
         if df.empty or "time" not in df.columns:
             continue
 
@@ -252,48 +251,37 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         all_dfs.append(df)
 
     if not all_dfs:
-        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid historical data.")
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid daily historical data.")
         return pd.DataFrame()
 
     df_all = pd.concat(all_dfs, ignore_index=True)
-    df_all["time"] = pd.to_datetime(df_all["time"])
+    df_all["Datetime"] = pd.to_datetime(df_all["time"])
 
-    # Weighted average
+    # ===========
+    # Weighted avg
+    # ===========
     weighted_list = []
-    for time, group in df_all.groupby("time"):
-        w = group["weight"].values
-        weighted_vals = (group[numeric_cols_hist].T * w).T.sum()
-        row = weighted_vals.to_dict()
-        row["Datetime"] = time
-        weighted_list.append(row)
 
-    df_weighted = pd.DataFrame(weighted_list)
-    df_weighted.rename(columns={
-        "relative_humidity_2m": "Relative_humidity",
-        "precipitation": "Rainfall",
-        "cloud_cover": "Cloud_cover",
-        "surface_pressure": "Surface_pressure"
-    }, inplace=True)
-    for c in ["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]:
-        if c in df_weighted.columns:
-            df_weighted[c] = df_weighted[c].round(2)
+    for t, g in df_all.groupby("Datetime"):
+        w = g["weight"].values
 
-    df_weighted = df_weighted.sort_values("Datetime")
-    df_weighted.set_index("Datetime", inplace=True)
-    
-    df_daily = pd.DataFrame()
-    
-    df_daily["Relative_humidity"] = df_weighted["Relative_humidity"].resample("1D").mean()
-    df_daily["Cloud_cover"] = df_weighted["Cloud_cover"].resample("1D").mean()
-    df_daily["Surface_pressure"] = df_weighted["Surface_pressure"].resample("1D").mean()
-    
-    # Curah hujan wajib SUM
-    df_daily["Rainfall"] = df_weighted["Rainfall"].resample("1D").sum()
-    
-    df_daily = df_daily.reset_index()
-    df_daily["Region"] = region_labels.get(region_name, region_name)
-    
-    return df_daily[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
+        rh = (g["relative_humidity_2m_mean"] * w).sum()
+        cc = (g["cloud_cover_mean"] * w).sum()
+        sp = (g["surface_pressure_mean"] * w).sum()
+        rf = (g["precipitation_sum"] * w).sum()
+
+        weighted_list.append({
+            "Datetime": t,
+            "Relative_humidity": round(rh, 2),
+            "Cloud_cover": round(cc, 2),
+            "Surface_pressure": round(sp, 2),
+            "Rainfall": round(rf, 2)
+        })
+
+    df_final = pd.DataFrame(weighted_list)
+    df_final["Region"] = region_labels.get(region_name, region_name)
+
+    return df_final
 
 
 # -----------------------------
@@ -306,7 +294,7 @@ def fetch_forecast_multi_region(region_name, region_points):
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={latitudes}&longitude={longitudes}"
-        "&hourly=relative_humidity_2m,precipitation,cloud_cover,surface_pressure"
+        "&daily=relative_humidity_2m_mean,cloud_cover_mean,surface_pressure_mean,precipitation_sum"
         "&forecast_days=16&timezone=Asia%2FBangkok"
     )
 
@@ -317,17 +305,17 @@ def fetch_forecast_multi_region(region_name, region_points):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching forecast: {e}")
         return pd.DataFrame()
 
-    # --- Normalisasi format respons
-    if isinstance(data, dict) and "hourly" in data:
+    # Normalisasi respons
+    if isinstance(data, dict) and "daily" in data:
         data = [data] * len(region_points)
     elif isinstance(data, dict):
         data = list(data.values()) if "latitude" not in data else [data]
     elif not isinstance(data, list):
-        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected forecast response format.")
+        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected forecast format.")
         return pd.DataFrame()
 
+    # Sesuaikan panjang
     if len(data) < len(region_points):
-        st.info(f"[{region_labels.get(region_name, region_name)}] Adjusting forecast response length ({len(data)} vs {len(region_points)}).")
         while len(data) < len(region_points):
             data.append(data[-1])
     elif len(data) > len(region_points):
@@ -337,10 +325,10 @@ def fetch_forecast_multi_region(region_name, region_points):
 
     for i, (dir_name, info) in enumerate(region_points.items()):
         loc_data = data[i]
-        if not isinstance(loc_data, dict) or "hourly" not in loc_data:
+        if "daily" not in loc_data:
             continue
 
-        df = pd.DataFrame(loc_data["hourly"])
+        df = pd.DataFrame(loc_data["daily"])
         if df.empty or "time" not in df.columns:
             continue
 
@@ -349,47 +337,35 @@ def fetch_forecast_multi_region(region_name, region_points):
         all_dfs.append(df)
 
     if not all_dfs:
-        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid forecast data.")
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid daily forecast data.")
         return pd.DataFrame()
 
     df_all = pd.concat(all_dfs, ignore_index=True)
-    df_all["time"] = pd.to_datetime(df_all["time"])
+    df_all["Datetime"] = pd.to_datetime(df_all["time"])
 
+    # Weighted avg
     weighted_list = []
-    for time, group in df_all.groupby("time"):
-        w = group["weight"].values
-        weighted_vals = (group[numeric_cols_fore].T * w).T.sum()
-        row = weighted_vals.to_dict()
-        row["Datetime"] = time
-        weighted_list.append(row)
 
-    df_weighted = pd.DataFrame(weighted_list)
-    df_weighted.rename(columns={
-        "relative_humidity_2m": "Relative_humidity",
-        "precipitation": "Rainfall",
-        "cloud_cover": "Cloud_cover",
-        "surface_pressure": "Surface_pressure"
-    }, inplace=True)
-    for c in ["Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]:
-        if c in df_weighted.columns:
-            df_weighted[c] = df_weighted[c].round(2)
+    for t, g in df_all.groupby("Datetime"):
+        w = g["weight"].values
 
-    df_weighted = df_weighted.sort_values("Datetime")
-    df_weighted.set_index("Datetime", inplace=True)
-    
-    df_daily = pd.DataFrame()
-    
-    df_daily["Relative_humidity"] = df_weighted["Relative_humidity"].resample("1D").mean()
-    df_daily["Cloud_cover"] = df_weighted["Cloud_cover"].resample("1D").mean()
-    df_daily["Surface_pressure"] = df_weighted["Surface_pressure"].resample("1D").mean()
-    
-    # Rainfall SUM
-    df_daily["Rainfall"] = df_weighted["Rainfall"].resample("1D").sum()
-    
-    df_daily = df_daily.reset_index()
-    df_daily["Region"] = region_labels.get(region_name, region_name)
-    
-    return df_daily[["Datetime", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
+        rh = (g["relative_humidity_2m_mean"] * w).sum()
+        cc = (g["cloud_cover_mean"] * w).sum()
+        sp = (g["surface_pressure_mean"] * w).sum()
+        rf = (g["precipitation_sum"] * w).sum()
+
+        weighted_list.append({
+            "Datetime": t,
+            "Relative_humidity": round(rh, 2),
+            "Cloud_cover": round(cc, 2),
+            "Surface_pressure": round(sp, 2),
+            "Rainfall": round(rf, 2)
+        })
+
+    df_final = pd.DataFrame(weighted_list)
+    df_final["Region"] = region_labels.get(region_name, region_name)
+
+    return df_final
 
 # -----------------------------
 # Wrapper: proses setiap region berurutan dan merge jadi satu wide table
