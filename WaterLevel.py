@@ -341,13 +341,13 @@ if upload_success and st.session_state.get("forecast_running", False):
 
         # --- Forecast ---
         fore_df = fetch_forecast_multi_region_daily(region_name, region_points)
-        fore_df = fore_df[(fore_df["Datetime"] >= fore_start.date()) & (fore_df["Datetime"] <= fore_end.date())]
+        fore_df = fore_df[(fore_df["Date"] >= fore_start.date()) & (fore_df["Date"] <= fore_end.date())]
         fore_df["Source"] = "Forecast"
 
         # Gabungkan
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
-        combined_df.sort_values("Datetime", inplace=True)
-        combined_df = combined_df.drop_duplicates(subset=["Datetime"], keep="last")
+        combined_df.sort_values("Date", inplace=True)
+        combined_df = combined_df.drop_duplicates(subset=["Date"], keep="last")
 
         # Ganti nama kolom jadi prefiks region
         rename_map = {
@@ -361,7 +361,7 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Merge ke tabel utama
         merged_wide = pd.merge(
             merged_wide, 
-            combined_df[["Datetime"] + list(rename_map.values())],
+            combined_df[["Date"] + list(rename_map.values())],
             on="Datetime", how="outer"
         )
         step_counter += 1
