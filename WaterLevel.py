@@ -116,9 +116,9 @@ if uploaded_file is not None:
             wl_daily['Water_level'] = wl_daily['Water_level'].round(3)
             
             # -----------------------
-            # 5️⃣ Hanya 4 hari (daily) sebelum start date
+            # 5️⃣ Hanya 14 hari (daily) sebelum start date
             # -----------------------
-            start_limit = start_datetime - timedelta(days=4)
+            start_limit = start_datetime - timedelta(days=14)
             wl_daily = wl_daily[(wl_daily["Datetime"] >= start_limit) & (wl_daily["Datetime"] < start_datetime)]
             wl_daily = wl_daily.drop_duplicates(subset="Datetime").reset_index(drop=True)
             
