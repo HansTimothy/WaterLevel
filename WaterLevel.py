@@ -329,9 +329,7 @@ if upload_success and st.session_state.get("forecast_running", False):
 
     # tabel awal
     merged_wide = wl_daily.copy()
-    if "time" in merged_wide.columns:
-        merged_wide.rename(columns={"time": "Date"}, inplace=True)
-    merged_wide["Date"] = pd.to_datetime(merged_wide["Date"]).dt.date
+    merged_wide["Datetime"] = pd.to_datetime(merged_wide["Datetime"]).dt.date
 
     for region_name, region_points in multi_points.items():
         region_label = region_labels.get(region_name, region_name)
@@ -343,13 +341,13 @@ if upload_success and st.session_state.get("forecast_running", False):
 
         # --- Forecast ---
         fore_df = fetch_forecast_multi_region_daily(region_name, region_points)
-        fore_df = fore_df[(fore_df["Date"] >= fore_start.date()) & (fore_df["Date"] <= fore_end.date())]
+        fore_df = fore_df[(fore_df["Datetime"] >= fore_start.date()) & (fore_df["Datetime"] <= fore_end.date())]
         fore_df["Source"] = "Forecast"
 
         # Gabungkan
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
-        combined_df.sort_values("Date", inplace=True)
-        combined_df = combined_df.drop_duplicates(subset=["Date"], keep="last")
+        combined_df.sort_values("Datetime", inplace=True)
+        combined_df = combined_df.drop_duplicates(subset=["Datetime"], keep="last")
 
         # Ganti nama kolom jadi prefiks region
         rename_map = {
@@ -363,14 +361,14 @@ if upload_success and st.session_state.get("forecast_running", False):
         # Merge ke tabel utama
         merged_wide = pd.merge(
             merged_wide, 
-            combined_df[["Date"] + list(rename_map.values())],
-            on="Date", how="outer"
+            combined_df[["Datetime"] + list(rename_map.values())],
+            on="Datetime", how="outer"
         )
         step_counter += 1
         progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
 
     # urutkan dan rapikan
-    merged_wide = merged_wide.sort_values("Date").round(2)
+    merged_wide = merged_wide.sort_values("Datetime").round(2)
     st.session_state["final_df"] = merged_wide
     st.session_state["forecast_done"] = True
     st.session_state["forecast_running"] = False
