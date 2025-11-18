@@ -31,7 +31,7 @@ tomorrow = (now_utc + timedelta(hours=7)).date() + timedelta(days=1)
 
 selected_date = st.date_input(
     "Date",
-    value=(now_utc + timedelta(hours=7)).date(), 
+    value=tomorrow, 
     max_value=tomorrow
 )
 
