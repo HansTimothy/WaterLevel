@@ -409,9 +409,10 @@ if run_forecast:
 if upload_success and st.session_state.get("forecast_running", False):
     progress_container = st.empty()
 
-    # ==== PROGRESS HANYA UNTUK FETCHING ====
-    total_fetch_steps = len(multi_points)   # TUNGGAL: 1 region = 1 step
-    fetch_counter = 0
+    # ==== PROGRESS: FETCHING + FORECAST ====
+    total_steps = len(multi_points) + 1   # +1 = LSTM forecast
+    current_step = 0
+
     progress_bar = st.progress(0.0)
 
     # tabel wide awal (WL daily)
@@ -421,7 +422,7 @@ if upload_success and st.session_state.get("forecast_running", False):
     merged_wide["Datetime"] = pd.to_datetime(merged_wide["Datetime"])
 
     # ====================================================
-    # 1️⃣ FETCHING MULTI-REGION (dengan progress bar)
+    # 1️⃣ FETCHING MULTI-REGION (progress berjalan)
     # ====================================================
     for region_name, region_points in multi_points.items():
         region_label = region_labels.get(region_name, region_name)
@@ -433,13 +434,11 @@ if upload_success and st.session_state.get("forecast_running", False):
         
         # ---------- FORECAST ----------
         if start_datetime > rounded_now:
-            # Full future
             fore_df = fetch_forecast_multi_region(region_name, region_points)
             fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
             fore_df["Source"] = "Forecast"
 
         elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(days=7):
-            # Hybrid
             hist_fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= rounded_now)].copy()
             hist_fore_df["Source"] = "Forecast"
 
@@ -450,24 +449,21 @@ if upload_success and st.session_state.get("forecast_running", False):
                 fore_df = pd.concat([hist_fore_df, api_fore_df], ignore_index=True)
             else:
                 fore_df = hist_fore_df
-
         else:
-            # Full past
             fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= fore_end)].copy()
             fore_df["Source"] = "Forecast"
 
+        # Gabungkan & rapikan
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
         combined_df["Datetime"] = pd.to_datetime(combined_df["Datetime"])
         combined_df.sort_values("Datetime", inplace=True)
         combined_df = combined_df.drop_duplicates(subset=["Datetime"], keep="last")
 
-        # batasi window
         combined_df = combined_df[
             (combined_df["Datetime"] >= start_datetime - timedelta(days=14)) &
             (combined_df["Datetime"] < start_datetime + timedelta(days=7))
         ]
 
-        # rename
         rename_map = {
             "Relative_humidity": f"{region_name}Relative_humidity",
             "Cloud_cover": f"{region_name}Cloud_cover",
@@ -478,7 +474,6 @@ if upload_success and st.session_state.get("forecast_running", False):
 
         combined_df.rename(columns=rename_map, inplace=True)
 
-        # merge ke wide table
         merged_wide = pd.merge(
             merged_wide, 
             combined_df[["Datetime"] + list(rename_map.values())],
@@ -486,26 +481,19 @@ if upload_success and st.session_state.get("forecast_running", False):
         )
 
         # UPDATE PROGRESS BAR
-        fetch_counter += 1
-        progress_bar.progress(fetch_counter / total_fetch_steps)
+        current_step += 1
+        progress_bar.progress(current_step / total_steps)
 
-    # selesai fetching
     merged_wide = merged_wide.sort_values("Datetime").round(2)
     final_df = merged_wide.copy()
 
-    # simpan
     st.session_state["final_df"] = merged_wide
-    st.session_state["forecast_done"] = False  # belum forecast, baru fetch selesai
+    st.session_state["forecast_done"] = False
 
-    # SET PROGRESS KE 100%
-    progress_bar.progress(1.0)
-    progress_container.success("All region data fetched successfully!")
+    # ====================================================
+    # 2️⃣ LSTM FORECAST (jadi STEP TERAKHIR PROGRESS BAR)
+    # ====================================================
 
-    # ==========================================================
-    # 2️⃣ LSTM FORECAST (TANPA PROGRESS LOOP)
-    # ==========================================================
-
-    progress_container = st.empty()
     progress_container.markdown("Running 7-day LSTM forecast...")
 
     # -----------------------------
