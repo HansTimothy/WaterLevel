@@ -141,7 +141,7 @@ if uploaded_file is not None:
         st.error(f"Failed to read file: {e}")
 
 # -----------------------------
-# Multi-point coordinates + bobot IDW
+# Multi-point coordinates + bobot IDW (daily)
 # -----------------------------
 multi_points = {
     "T_": { "NW": {"lat":0.38664, "lon":113.78421, "weight":0.000639},
@@ -182,13 +182,10 @@ multi_points = {
              "SE":{"lat":-1.72232, "lon":115.50001, "weight":0.000630} },
 }
 
-# Kolom numerik yang akan dipakai untuk perhitungan weighted average
-numeric_cols_hist = ["relative_humidity_2m", "precipitation", "cloud_cover", "surface_pressure"]
-numeric_cols_fore = ["relative_humidity_2m", "precipitation", "cloud_cover", "surface_pressure"]
+# Kolom numerik untuk daily API
+numeric_cols_hist = ["relative_humidity_2m_mean", "precipitation_sum", "cloud_cover_mean", "surface_pressure_mean"]
+numeric_cols_fore = ["relative_humidity_2m_mean", "precipitation_sum", "cloud_cover_mean", "surface_pressure_mean"]
 
-# -----------------------------
-# Fungsi bantu: fetch per-lokasi (historical)
-# -----------------------------
 # Nama lengkap region
 region_labels = {
     "T_": "Tuhup",
@@ -198,9 +195,9 @@ region_labels = {
 }
 
 # -----------------------------
-# Fungsi: historical per region
+# Fungsi: historical per region (daily)
 # -----------------------------
-def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
+def fetch_historical_multi_region_daily(region_name, region_points, start_dt, end_dt):
     latitudes = ",".join(str(pt["lat"]) for pt in region_points.values())
     longitudes = ",".join(str(pt["lon"]) for pt in region_points.values())
 
@@ -208,7 +205,7 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         f"https://archive-api.open-meteo.com/v1/archive?"
         f"latitude={latitudes}&longitude={longitudes}"
         f"&start_date={start_dt.date().isoformat()}&end_date={end_dt.date().isoformat()}"
-        "&daily=relative_humidity_2m_mean,cloud_cover_mean,surface_pressure_mean,precipitation_sum"
+        "&daily=relative_humidity_2m_mean,precipitation_sum,cloud_cover_mean,surface_pressure_mean"
         "&timezone=Asia%2FBangkok"
     )
 
@@ -219,82 +216,51 @@ def fetch_historical_multi_region(region_name, region_points, start_dt, end_dt):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching historical: {e}")
         return pd.DataFrame()
 
-    # --- Normalisasi respons ---
-    if isinstance(data, dict) and "daily" in data:
-        data = [data] * len(region_points)
-    elif isinstance(data, dict):
-        data = list(data.values()) if "latitude" not in data else [data]
-    elif not isinstance(data, list):
-        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected historical format.")
-        return pd.DataFrame()
-
-    # Sesuaikan panjang array
-    if len(data) < len(region_points):
-        while len(data) < len(region_points):
-            data.append(data[-1])
-    elif len(data) > len(region_points):
-        data = data[:len(region_points)]
-
     all_dfs = []
-
-    for i, (dir_name, info) in enumerate(region_points.items()):
-        loc_data = data[i]
-        if "daily" not in loc_data:
+    for dir_name, info in region_points.items():
+        if "daily" not in data:
             continue
-
-        df = pd.DataFrame(loc_data["daily"])
-        if df.empty or "time" not in df.columns:
-            continue
-
+        df = pd.DataFrame(data["daily"])
         df["direction"] = dir_name
         df["weight"] = info["weight"]
         all_dfs.append(df)
 
     if not all_dfs:
-        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid daily historical data.")
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid historical data.")
         return pd.DataFrame()
 
     df_all = pd.concat(all_dfs, ignore_index=True)
-    df_all["Datetime"] = pd.to_datetime(df_all["time"])
 
-    # ===========
-    # Weighted avg
-    # ===========
+    # Weighted average per day
     weighted_list = []
+    for date, group in df_all.groupby("time"):
+        w = group["weight"].values
+        weighted_vals = (group[numeric_cols_hist].T * w).T.sum()
+        row = weighted_vals.to_dict()
+        row["Date"] = pd.to_datetime(date).date()
+        weighted_list.append(row)
 
-    for t, g in df_all.groupby("Datetime"):
-        w = g["weight"].values
-
-        rh = (g["relative_humidity_2m_mean"] * w).sum()
-        cc = (g["cloud_cover_mean"] * w).sum()
-        sp = (g["surface_pressure_mean"] * w).sum()
-        rf = (g["precipitation_sum"] * w).sum()
-
-        weighted_list.append({
-            "Datetime": t,
-            "Relative_humidity": round(rh, 2),
-            "Cloud_cover": round(cc, 2),
-            "Surface_pressure": round(sp, 2),
-            "Rainfall": round(rf, 2)
-        })
-
-    df_final = pd.DataFrame(weighted_list)
-    df_final["Region"] = region_labels.get(region_name, region_name)
-
-    return df_final
-
+    df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "relative_humidity_2m_mean": "Relative_humidity",
+        "precipitation_sum": "Rainfall",
+        "cloud_cover_mean": "Cloud_cover",
+        "surface_pressure_mean": "Surface_pressure"
+    }, inplace=True)
+    df_weighted["Region"] = region_labels.get(region_name, region_name)
+    return df_weighted[["Date", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
 # -----------------------------
-# Fungsi: forecast per region
+# Fungsi: forecast per region (daily)
 # -----------------------------
-def fetch_forecast_multi_region(region_name, region_points):
+def fetch_forecast_multi_region_daily(region_name, region_points):
     latitudes = ",".join(str(pt["lat"]) for pt in region_points.values())
     longitudes = ",".join(str(pt["lon"]) for pt in region_points.values())
 
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={latitudes}&longitude={longitudes}"
-        "&daily=relative_humidity_2m_mean,cloud_cover_mean,surface_pressure_mean,precipitation_sum"
+        "&daily=relative_humidity_2m_mean,precipitation_sum,cloud_cover_mean,surface_pressure_mean"
         "&forecast_days=16&timezone=Asia%2FBangkok"
     )
 
@@ -305,70 +271,42 @@ def fetch_forecast_multi_region(region_name, region_points):
         st.warning(f"[{region_labels.get(region_name, region_name)}] Error fetching forecast: {e}")
         return pd.DataFrame()
 
-    # Normalisasi respons
-    if isinstance(data, dict) and "daily" in data:
-        data = [data] * len(region_points)
-    elif isinstance(data, dict):
-        data = list(data.values()) if "latitude" not in data else [data]
-    elif not isinstance(data, list):
-        st.warning(f"[{region_labels.get(region_name, region_name)}] Unexpected forecast format.")
-        return pd.DataFrame()
-
-    # Sesuaikan panjang
-    if len(data) < len(region_points):
-        while len(data) < len(region_points):
-            data.append(data[-1])
-    elif len(data) > len(region_points):
-        data = data[:len(region_points)]
-
     all_dfs = []
-
-    for i, (dir_name, info) in enumerate(region_points.items()):
-        loc_data = data[i]
-        if "daily" not in loc_data:
+    for dir_name, info in region_points.items():
+        if "daily" not in data:
             continue
-
-        df = pd.DataFrame(loc_data["daily"])
-        if df.empty or "time" not in df.columns:
-            continue
-
+        df = pd.DataFrame(data["daily"])
         df["direction"] = dir_name
         df["weight"] = info["weight"]
         all_dfs.append(df)
 
     if not all_dfs:
-        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid daily forecast data.")
+        st.warning(f"[{region_labels.get(region_name, region_name)}] No valid forecast data.")
         return pd.DataFrame()
 
     df_all = pd.concat(all_dfs, ignore_index=True)
-    df_all["Datetime"] = pd.to_datetime(df_all["time"])
 
-    # Weighted avg
+    # Weighted average per day
     weighted_list = []
+    for date, group in df_all.groupby("time"):
+        w = group["weight"].values
+        weighted_vals = (group[numeric_cols_fore].T * w).T.sum()
+        row = weighted_vals.to_dict()
+        row["Date"] = pd.to_datetime(date).date()
+        weighted_list.append(row)
 
-    for t, g in df_all.groupby("Datetime"):
-        w = g["weight"].values
-
-        rh = (g["relative_humidity_2m_mean"] * w).sum()
-        cc = (g["cloud_cover_mean"] * w).sum()
-        sp = (g["surface_pressure_mean"] * w).sum()
-        rf = (g["precipitation_sum"] * w).sum()
-
-        weighted_list.append({
-            "Datetime": t,
-            "Relative_humidity": round(rh, 2),
-            "Cloud_cover": round(cc, 2),
-            "Surface_pressure": round(sp, 2),
-            "Rainfall": round(rf, 2)
-        })
-
-    df_final = pd.DataFrame(weighted_list)
-    df_final["Region"] = region_labels.get(region_name, region_name)
-
-    return df_final
+    df_weighted = pd.DataFrame(weighted_list)
+    df_weighted.rename(columns={
+        "relative_humidity_2m_mean": "Relative_humidity",
+        "precipitation_sum": "Rainfall",
+        "cloud_cover_mean": "Cloud_cover",
+        "surface_pressure_mean": "Surface_pressure"
+    }, inplace=True)
+    df_weighted["Region"] = region_labels.get(region_name, region_name)
+    return df_weighted[["Date", "Region", "Relative_humidity", "Rainfall", "Cloud_cover", "Surface_pressure"]]
 
 # -----------------------------
-# Wrapper: proses setiap region berurutan dan merge jadi satu wide table
+# Wrapper: proses setiap region & merge jadi daily wide table
 # -----------------------------
 run_forecast = st.button("Run 7-Day Forecast")
 if "forecast_done" not in st.session_state:
@@ -384,87 +322,58 @@ if run_forecast:
 
 if upload_success and st.session_state.get("forecast_running", False):
     progress_container = st.empty()
-
-    # ==== PROGRESS: FETCHING + FORECAST ====
-    total_steps = len(multi_points) + 1   # +1 = LSTM forecast
-    current_step = 0
-
+    total_forecast_days = 7
+    total_steps = len(multi_points) * 2 + 3 + total_forecast_days
+    step_counter = 0
     progress_bar = st.progress(0.0)
 
-    # tabel wide awal (WL daily)
+    # tabel awal
     merged_wide = wl_daily.copy()
     if "time" in merged_wide.columns:
-        merged_wide.rename(columns={"time": "Datetime"}, inplace=True)
-    merged_wide["Datetime"] = pd.to_datetime(merged_wide["Datetime"])
+        merged_wide.rename(columns={"time": "Date"}, inplace=True)
+    merged_wide["Date"] = pd.to_datetime(merged_wide["Date"]).dt.date
 
-    # ====================================================
-    # 1️⃣ FETCHING MULTI-REGION (progress berjalan)
-    # ====================================================
     for region_name, region_points in multi_points.items():
         region_label = region_labels.get(region_name, region_name)
-        progress_container.markdown(f"Fetching data for **{region_label}** ...")
+        progress_container.markdown(f"Fetching daily data for **{region_label}** ...")
 
-        # ---------- HISTORICAL ----------
-        hist_df = fetch_historical_multi_region(region_name, region_points, hist_start, hist_end)
+        # --- Historical ---
+        hist_df = fetch_historical_multi_region_daily(region_name, region_points, hist_start, hist_end)
         hist_df["Source"] = "Historical"
-        
-        # ---------- FORECAST ----------
-        if start_datetime > rounded_now:
-            fore_df = fetch_forecast_multi_region(region_name, region_points)
-            fore_df = fore_df[(fore_df["Datetime"] >= fore_start) & (fore_df["Datetime"] <= fore_end)]
-            fore_df["Source"] = "Forecast"
 
-        elif start_datetime <= rounded_now and start_datetime >= rounded_now - timedelta(days=7):
-            hist_fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= rounded_now)].copy()
-            hist_fore_df["Source"] = "Forecast"
+        # --- Forecast ---
+        fore_df = fetch_forecast_multi_region_daily(region_name, region_points)
+        fore_df = fore_df[(fore_df["Date"] >= fore_start.date()) & (fore_df["Date"] <= fore_end.date())]
+        fore_df["Source"] = "Forecast"
 
-            if fore_end > rounded_now:
-                api_fore_df = fetch_forecast_multi_region(region_name, region_points)
-                api_fore_df = api_fore_df[(api_fore_df["Datetime"] > rounded_now) & (api_fore_df["Datetime"] <= fore_end)]
-                api_fore_df["Source"] = "Forecast"
-                fore_df = pd.concat([hist_fore_df, api_fore_df], ignore_index=True)
-            else:
-                fore_df = hist_fore_df
-        else:
-            fore_df = hist_df[(hist_df["Datetime"] >= fore_start) & (hist_df["Datetime"] <= fore_end)].copy()
-            fore_df["Source"] = "Forecast"
-
-        # Gabungkan & rapikan
+        # Gabungkan
         combined_df = pd.concat([hist_df, fore_df], ignore_index=True)
-        combined_df["Datetime"] = pd.to_datetime(combined_df["Datetime"])
-        combined_df.sort_values("Datetime", inplace=True)
-        combined_df = combined_df.drop_duplicates(subset=["Datetime"], keep="last")
+        combined_df.sort_values("Date", inplace=True)
+        combined_df = combined_df.drop_duplicates(subset=["Date"], keep="last")
 
-        combined_df = combined_df[
-            (combined_df["Datetime"] >= start_datetime - timedelta(days=14)) &
-            (combined_df["Datetime"] < start_datetime + timedelta(days=7))
-        ]
-
+        # Ganti nama kolom jadi prefiks region
         rename_map = {
             "Relative_humidity": f"{region_name}Relative_humidity",
             "Cloud_cover": f"{region_name}Cloud_cover",
             "Surface_pressure": f"{region_name}Surface_pressure",
+            "Rainfall": f"{region_name}Rainfall"
         }
-        if region_name not in ["SL_", "MB_", "MU_"]:
-            rename_map["Rainfall"] = f"{region_name}Rainfall"
-
         combined_df.rename(columns=rename_map, inplace=True)
 
+        # Merge ke tabel utama
         merged_wide = pd.merge(
             merged_wide, 
-            combined_df[["Datetime"] + list(rename_map.values())],
-            on="Datetime", how="outer"
+            combined_df[["Date"] + list(rename_map.values())],
+            on="Date", how="outer"
         )
+        step_counter += 1
+        progress_bar.progress(min(max(step_counter / total_steps, 0.0), 1.0))
 
-        # UPDATE PROGRESS BAR
-        current_step += 1
-        progress_bar.progress(current_step / total_steps)
-
-    merged_wide = merged_wide.sort_values("Datetime").round(2)
-    final_df = merged_wide.copy()
-
+    # urutkan dan rapikan
+    merged_wide = merged_wide.sort_values("Date").round(2)
     st.session_state["final_df"] = merged_wide
-    st.session_state["forecast_done"] = False
+    st.session_state["forecast_done"] = True
+    st.session_state["forecast_running"] = False
 
     # ====================================================
     # 2️⃣ LSTM FORECAST (jadi STEP TERAKHIR PROGRESS BAR)
